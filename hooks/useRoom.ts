@@ -1,12 +1,21 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ConnectionState, DeviceInfo, FileItem, SignalingMessage } from "@/types";
+import { ConnectionState, DeviceInfo, FileItem } from "@/types";
 import { getDeviceInfo } from "@/lib/device";
-import { SignalingClient } from "@/lib/signaling";
-import { WebRTCManager } from "@/lib/webrtc";
+import { PeerManager } from "@/lib/peer-manager";
 import { FileTransferEngine, TransferProgressPayload } from "@/lib/file-transfer";
 import { sounds } from "@/lib/audio";
+
+// Generate clean 5-character code (alphanumeric excluding ambiguous 0/O, 1/I)
+function generateRoomCode(): string {
+  const chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+  let code = "";
+  for (let i = 0; i < 5; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
 
 export function useRoom() {
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
@@ -24,16 +33,9 @@ export function useRoom() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isMockMode, setIsMockMode] = useState<boolean>(false);
 
-  // References to long-lived engine instances and mutable state
-  const signalingRef = useRef<SignalingClient | null>(null);
-  const webrtcRef = useRef<WebRTCManager | null>(null);
+  // References to long-lived engine instances
+  const peerManagerRef = useRef<PeerManager | null>(null);
   const transferEngineRef = useRef<FileTransferEngine | null>(null);
-  const activeRoomCodeRef = useRef<string>("");
-
-  // Keep ref in sync
-  useEffect(() => {
-    activeRoomCodeRef.current = roomCode;
-  }, [roomCode]);
 
   // Initialize device info on client mount
   useEffect(() => {
@@ -47,18 +49,13 @@ export function useRoom() {
 
   // Cleanup helper
   const cleanupConnections = useCallback(() => {
-    if (signalingRef.current) {
-      signalingRef.current.disconnect();
-      signalingRef.current = null;
-    }
-    if (webrtcRef.current) {
-      webrtcRef.current.close();
-      webrtcRef.current = null;
+    if (peerManagerRef.current) {
+      peerManagerRef.current.destroy();
+      peerManagerRef.current = null;
     }
     if (transferEngineRef.current) {
       transferEngineRef.current.reset();
     }
-    activeRoomCodeRef.current = "";
   }, []);
 
   // Reset to landing
@@ -74,41 +71,39 @@ export function useRoom() {
   }, [cleanupConnections]);
 
   // Host: Create Drop
-  const createRoom = useCallback(() => {
+  const createRoom = useCallback(async () => {
+    const code = generateRoomCode();
+    setRoomCode(code);
+    setRole("sender");
+    setErrorMessage(null);
+
     if (isMockMode) {
       setConnectionState("waiting");
-      setRoomCode("7XK9P");
-      activeRoomCodeRef.current = "7XK9P";
-      setRole("sender");
       return;
     }
 
     cleanupConnections();
-    setErrorMessage(null);
-    setConnectionState("creating");
-    setRole("sender");
+    setConnectionState("waiting");
     sounds.click();
 
     const devInfo = getDeviceInfo();
-    const signaling = new SignalingClient();
-    signalingRef.current = signaling;
 
-    const webrtc = new WebRTCManager({
-      onConnectionStateChange: (state) => {
-        console.log("[useRoom] WebRTC state:", state);
-        if (state === "connected") {
-          setConnectionState("connected");
-          signaling.stopPolling();
-          sounds.connected();
-        } else if (state === "disconnected" || state === "failed") {
-          setConnectionState("disconnected");
-        }
+    const manager = new PeerManager(devInfo, {
+      onPeerOpen: () => {
+        console.log("[useRoom] Room ready with code:", code);
+        setConnectionState("waiting");
       },
-      onDataChannelOpen: () => {
+      onConnectionEstablished: (remoteInfo) => {
+        console.log("[useRoom] Peer connected:", remoteInfo);
+        if (remoteInfo) setRemoteDevice(remoteInfo);
         setConnectionState("connected");
-        signaling.stopPolling();
+        sounds.connected();
       },
-      onDataChannelMessage: (data) => {
+      onConnectionClosed: () => {
+        console.log("[useRoom] Connection closed");
+        setConnectionState("disconnected");
+      },
+      onDataReceived: (data) => {
         transferEngineRef.current?.handleIncomingData(
           data,
           (incomingItem) => {
@@ -130,102 +125,31 @@ export function useRoom() {
           }
         );
       },
-      onIceCandidate: (candidate) => {
-        signaling.send({
-          type: "ice-candidate",
-          roomCode: activeRoomCodeRef.current,
-          candidate: candidate.toJSON(),
-        });
-      },
-    });
-    webrtcRef.current = webrtc;
-
-    signaling.connect({
-      onOpen: () => {
-        signaling.send({
-          type: "create-room",
-          peerInfo: devInfo,
-        });
-      },
-      onMessage: async (msg: SignalingMessage) => {
-        switch (msg.type) {
-          case "room-created": {
-            setRoomCode(msg.roomCode);
-            activeRoomCodeRef.current = msg.roomCode;
-            setConnectionState("waiting");
-            break;
-          }
-
-          case "peer-joined": {
-            setRemoteDevice(msg.peerInfo);
-            setConnectionState("connecting");
-
-            // Host creates WebRTC offer
-            try {
-              webrtc.initPeerConnection(true);
-              const offer = await webrtc.createOffer();
-              if (offer) {
-                signaling.send({
-                  type: "offer",
-                  roomCode: activeRoomCodeRef.current,
-                  sdp: offer,
-                });
-              }
-            } catch (err) {
-              console.error("[useRoom] Error initiating offer:", err);
-              setErrorMessage("Failed to initiate direct peer connection.");
-            }
-            break;
-          }
-
-          case "answer": {
-            try {
-              await webrtc.handleAnswer(msg.sdp);
-            } catch (err) {
-              console.error("[useRoom] Error handling answer:", err);
-            }
-            break;
-          }
-
-          case "ice-candidate": {
-            webrtc.addIceCandidate(msg.candidate);
-            break;
-          }
-
-          case "peer-left": {
-            setConnectionState("disconnected");
-            setErrorMessage(msg.reason || "Peer disconnected.");
-            break;
-          }
-
-          case "error": {
-            setErrorMessage(msg.message);
-            setConnectionState("failed");
-            break;
-          }
-        }
-      },
       onError: (err) => {
-        setErrorMessage("Signaling error occurred.");
-        setConnectionState("failed");
+        console.warn("[useRoom] Host error:", err);
+        setErrorMessage(err);
       },
     });
+
+    peerManagerRef.current = manager;
+    await manager.createRoom(code);
   }, [cleanupConnections, isMockMode]);
 
   // Guest: Join Drop
   const joinRoom = useCallback(
-    (code: string) => {
+    async (code: string) => {
       const formattedCode = code.toUpperCase().trim();
       if (!formattedCode || formattedCode.length !== 5) {
         setErrorMessage("Please enter a valid 5-character room code.");
         return;
       }
 
+      setRoomCode(formattedCode);
+      setRole("receiver");
+      setErrorMessage(null);
+
       if (isMockMode) {
         setConnectionState("connected");
-        setRoomCode(formattedCode);
-        activeRoomCodeRef.current = formattedCode;
-        setRole("receiver");
         setRemoteDevice({
           browser: "Chrome",
           os: "macOS",
@@ -236,33 +160,26 @@ export function useRoom() {
       }
 
       cleanupConnections();
-      setErrorMessage(null);
       setConnectionState("connecting");
-      setRoomCode(formattedCode);
-      activeRoomCodeRef.current = formattedCode;
-      setRole("receiver");
       sounds.click();
 
       const devInfo = getDeviceInfo();
-      const signaling = new SignalingClient();
-      signalingRef.current = signaling;
 
-      const webrtc = new WebRTCManager({
-        onConnectionStateChange: (state) => {
-          console.log("[useRoom Receiver] WebRTC state:", state);
-          if (state === "connected") {
-            setConnectionState("connected");
-            signaling.stopPolling();
-            sounds.connected();
-          } else if (state === "disconnected" || state === "failed") {
-            setConnectionState("disconnected");
-          }
+      const manager = new PeerManager(devInfo, {
+        onPeerOpen: () => {
+          console.log("[useRoom Guest] Connecting to code:", formattedCode);
         },
-        onDataChannelOpen: () => {
+        onConnectionEstablished: (remoteInfo) => {
+          console.log("[useRoom Guest] Connected to host:", remoteInfo);
+          if (remoteInfo) setRemoteDevice(remoteInfo);
           setConnectionState("connected");
-          signaling.stopPolling();
+          sounds.connected();
         },
-        onDataChannelMessage: (data) => {
+        onConnectionClosed: () => {
+          console.log("[useRoom Guest] Connection closed");
+          setConnectionState("disconnected");
+        },
+        onDataReceived: (data) => {
           transferEngineRef.current?.handleIncomingData(
             data,
             (incomingItem) => {
@@ -284,74 +201,15 @@ export function useRoom() {
             }
           );
         },
-        onIceCandidate: (candidate) => {
-          signaling.send({
-            type: "ice-candidate",
-            roomCode: formattedCode,
-            candidate: candidate.toJSON(),
-          });
-        },
-      });
-      webrtcRef.current = webrtc;
-
-      signaling.connect({
-        onOpen: () => {
-          signaling.send({
-            type: "join-room",
-            roomCode: formattedCode,
-            peerInfo: devInfo,
-          });
-        },
-        onMessage: async (msg: SignalingMessage) => {
-          switch (msg.type) {
-            case "room-joined": {
-              if (msg.peerInfo) {
-                setRemoteDevice(msg.peerInfo);
-              }
-              break;
-            }
-
-            case "offer": {
-              try {
-                webrtc.initPeerConnection(false);
-                const answer = await webrtc.handleOffer(msg.sdp);
-                if (answer) {
-                  signaling.send({
-                    type: "answer",
-                    roomCode: formattedCode,
-                    sdp: answer,
-                  });
-                }
-              } catch (err) {
-                console.error("[useRoom Receiver] Error creating answer:", err);
-                setErrorMessage("Failed to establish peer connection.");
-              }
-              break;
-            }
-
-            case "ice-candidate": {
-              webrtc.addIceCandidate(msg.candidate);
-              break;
-            }
-
-            case "peer-left": {
-              setConnectionState("disconnected");
-              setErrorMessage(msg.reason || "Peer disconnected.");
-              break;
-            }
-
-            case "error": {
-              setErrorMessage(msg.message);
-              setConnectionState("failed");
-              break;
-            }
-          }
-        },
-        onError: () => {
-          setErrorMessage("Could not connect to signaling service.");
+        onError: (err) => {
+          console.warn("[useRoom Guest] Error:", err);
+          setErrorMessage(err);
           setConnectionState("failed");
         },
       });
+
+      peerManagerRef.current = manager;
+      await manager.joinRoom(formattedCode);
     },
     [cleanupConnections, isMockMode]
   );
@@ -398,7 +256,6 @@ export function useRoom() {
     if (pending.length === 0) return;
 
     if (isMockMode) {
-      // Simulate mock transfer
       setConnectionState("transferring");
       for (const item of pending) {
         setActiveFileId(item.id);
@@ -419,8 +276,8 @@ export function useRoom() {
       return;
     }
 
-    if (!webrtcRef.current || !webrtcRef.current.isChannelOpen()) {
-      setErrorMessage("Data channel is not ready. Please wait for connection.");
+    if (!peerManagerRef.current || !peerManagerRef.current.isConnected()) {
+      setErrorMessage("Connection is not ready. Please wait for peer.");
       return;
     }
 
@@ -431,8 +288,8 @@ export function useRoom() {
       try {
         await transferEngineRef.current?.sendFile(
           item,
-          (data) => webrtcRef.current?.send(data) || false,
-          () => webrtcRef.current?.getBufferedAmount() || 0,
+          (data) => peerManagerRef.current?.send(data) || false,
+          () => peerManagerRef.current?.getBufferedAmount() || 0,
           (progressPayload) => updateFileProgress(progressPayload),
           (completedId) => {
             setFiles((prev) =>
@@ -468,11 +325,9 @@ export function useRoom() {
     setConnectionState(state);
     if (state === "waiting") {
       setRoomCode("7XK9P");
-      activeRoomCodeRef.current = "7XK9P";
       setRole("sender");
     } else if (state === "connecting" || state === "connected" || state === "transferring" || state === "completed") {
       setRoomCode("7XK9P");
-      activeRoomCodeRef.current = "7XK9P";
       setRemoteDevice({
         browser: "Chrome",
         os: "macOS",
