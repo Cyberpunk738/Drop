@@ -24,10 +24,16 @@ export function useRoom() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isMockMode, setIsMockMode] = useState<boolean>(false);
 
-  // References to long-lived engine instances
+  // References to long-lived engine instances and mutable state
   const signalingRef = useRef<SignalingClient | null>(null);
   const webrtcRef = useRef<WebRTCManager | null>(null);
   const transferEngineRef = useRef<FileTransferEngine | null>(null);
+  const activeRoomCodeRef = useRef<string>("");
+
+  // Keep ref in sync
+  useEffect(() => {
+    activeRoomCodeRef.current = roomCode;
+  }, [roomCode]);
 
   // Initialize device info on client mount
   useEffect(() => {
@@ -52,6 +58,7 @@ export function useRoom() {
     if (transferEngineRef.current) {
       transferEngineRef.current.reset();
     }
+    activeRoomCodeRef.current = "";
   }, []);
 
   // Reset to landing
@@ -71,6 +78,7 @@ export function useRoom() {
     if (isMockMode) {
       setConnectionState("waiting");
       setRoomCode("7XK9P");
+      activeRoomCodeRef.current = "7XK9P";
       setRole("sender");
       return;
     }
@@ -90,6 +98,7 @@ export function useRoom() {
         console.log("[useRoom] WebRTC state:", state);
         if (state === "connected") {
           setConnectionState("connected");
+          signaling.stopPolling();
           sounds.connected();
         } else if (state === "disconnected" || state === "failed") {
           setConnectionState("disconnected");
@@ -97,6 +106,7 @@ export function useRoom() {
       },
       onDataChannelOpen: () => {
         setConnectionState("connected");
+        signaling.stopPolling();
       },
       onDataChannelMessage: (data) => {
         transferEngineRef.current?.handleIncomingData(
@@ -123,7 +133,7 @@ export function useRoom() {
       onIceCandidate: (candidate) => {
         signaling.send({
           type: "ice-candidate",
-          roomCode,
+          roomCode: activeRoomCodeRef.current,
           candidate: candidate.toJSON(),
         });
       },
@@ -141,6 +151,7 @@ export function useRoom() {
         switch (msg.type) {
           case "room-created": {
             setRoomCode(msg.roomCode);
+            activeRoomCodeRef.current = msg.roomCode;
             setConnectionState("waiting");
             break;
           }
@@ -156,7 +167,7 @@ export function useRoom() {
               if (offer) {
                 signaling.send({
                   type: "offer",
-                  roomCode: roomCode || "",
+                  roomCode: activeRoomCodeRef.current,
                   sdp: offer,
                 });
               }
@@ -194,12 +205,12 @@ export function useRoom() {
           }
         }
       },
-      onError: () => {
-        setErrorMessage("Could not connect to signaling server. Ensure server is running.");
+      onError: (err) => {
+        setErrorMessage("Signaling error occurred.");
         setConnectionState("failed");
       },
     });
-  }, [cleanupConnections, isMockMode, roomCode]);
+  }, [cleanupConnections, isMockMode]);
 
   // Guest: Join Drop
   const joinRoom = useCallback(
@@ -213,6 +224,7 @@ export function useRoom() {
       if (isMockMode) {
         setConnectionState("connected");
         setRoomCode(formattedCode);
+        activeRoomCodeRef.current = formattedCode;
         setRole("receiver");
         setRemoteDevice({
           browser: "Chrome",
@@ -227,6 +239,7 @@ export function useRoom() {
       setErrorMessage(null);
       setConnectionState("connecting");
       setRoomCode(formattedCode);
+      activeRoomCodeRef.current = formattedCode;
       setRole("receiver");
       sounds.click();
 
@@ -239,6 +252,7 @@ export function useRoom() {
           console.log("[useRoom Receiver] WebRTC state:", state);
           if (state === "connected") {
             setConnectionState("connected");
+            signaling.stopPolling();
             sounds.connected();
           } else if (state === "disconnected" || state === "failed") {
             setConnectionState("disconnected");
@@ -246,6 +260,7 @@ export function useRoom() {
         },
         onDataChannelOpen: () => {
           setConnectionState("connected");
+          signaling.stopPolling();
         },
         onDataChannelMessage: (data) => {
           transferEngineRef.current?.handleIncomingData(
@@ -333,7 +348,7 @@ export function useRoom() {
           }
         },
         onError: () => {
-          setErrorMessage("Could not connect to signaling server.");
+          setErrorMessage("Could not connect to signaling service.");
           setConnectionState("failed");
         },
       });
@@ -447,15 +462,17 @@ export function useRoom() {
     setConnectionState("connected");
   }, []);
 
-  // Demo Mock State Switcher for Milestone 1 UI review
+  // Demo Mock State Switcher for UI review
   const setMockState = useCallback((state: ConnectionState) => {
     setIsMockMode(true);
     setConnectionState(state);
     if (state === "waiting") {
       setRoomCode("7XK9P");
+      activeRoomCodeRef.current = "7XK9P";
       setRole("sender");
     } else if (state === "connecting" || state === "connected" || state === "transferring" || state === "completed") {
       setRoomCode("7XK9P");
+      activeRoomCodeRef.current = "7XK9P";
       setRemoteDevice({
         browser: "Chrome",
         os: "macOS",

@@ -2,7 +2,7 @@
 
 > **Send files. No account. No upload.**
 
-DROP is a fast, minimal, peer-to-peer file-sharing web application inspired by Apple AirDrop and modern developer tools. It enables instant file transfers directly between browsers using **WebRTC DataChannels** and a lightweight **WebSocket Signaling Server**, guaranteeing zero server-side file storage and complete privacy.
+DROP is a fast, minimal, peer-to-peer file-sharing web application inspired by the **14islands Monochrome Editorial Gallery** aesthetic and modern developer tools. It enables instant file transfers directly between browsers using **WebRTC DataChannels** and a lightweight **WebSocket Signaling Server**, guaranteeing zero server-side file storage and complete privacy.
 
 ---
 
@@ -12,7 +12,7 @@ DROP is a fast, minimal, peer-to-peer file-sharing web application inspired by A
 - **Zero Server Storage**: No databases, no cloud buckets, and zero file caching.
 - **Instant Rooms & QR Codes**: Generate temporary 5-character room codes or scan SVG QR codes with your device's camera.
 - **Chunked Streaming & Backpressure**: High-performance 64KB chunking with adaptive buffer thresholding (`bufferedAmount`) for transferring large files smoothly without browser memory leaks.
-- **AirDrop + Linear Aesthetic**: OLED dark mode, animated sonar radar effects, glassmorphic panels, and crisp typography.
+- **14islands Editorial Gallery Aesthetic**: Clean white canvas, oversized `Newsreader` display typography, hairline borders, and strict 4px corner radii with zero chromatic color noise.
 - **Live Transfer Metrics**: Real-time progress bars, byte counters, speed indicators (MB/s), and estimated time remaining (ETA).
 - **Tactile Audio Feedback**: Subtle Web Audio API synthesis for clicks, connection confirmation, and completion chimes.
 - **UI State Previewer**: Integrated dev toolbar to preview all connection and transfer states.
@@ -25,7 +25,8 @@ DROP is a fast, minimal, peer-to-peer file-sharing web application inspired by A
 - **Styling & Motion**: Tailwind CSS, Framer Motion, Lucide Icons
 - **Signaling**: Node.js WebSocket Server (`ws`)
 - **P2P Engine**: WebRTC (`RTCPeerConnection`, `RTCDataChannel`)
-- **Utilities**: `qrcode.react`, `canvas-confetti`
+- **Typography**: Newsreader (Editorial Serif), Inter (Grotesque UI), JetBrains Mono
+- **Utilities**: `qrcode.react`
 
 ---
 
@@ -60,8 +61,8 @@ DROP is a fast, minimal, peer-to-peer file-sharing web application inspired by A
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd DROP
+git clone https://github.com/Cyberpunk738/Drop.git
+cd Drop
 
 # Install dependencies
 npm install
@@ -89,23 +90,38 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
+## 🧪 Testing the Connection
+
+### Option A: Two Browser Windows (Same Computer)
+1. Open **[http://localhost:3000](http://localhost:3000)** in Window 1 and click **`Create a Drop`**.
+2. Open an **Incognito / Private Window** in Window 2 and go to **[http://localhost:3000](http://localhost:3000)**.
+3. Click **`Join a Drop`** and enter the 5-letter code displayed in Window 1.
+4. Drag a file into Window 1 and click **`Send Files Now`** — Window 2 will receive and automatically download the file.
+
+### Option B: Between Phone & Computer (Same Wi-Fi)
+1. On your computer, open **[http://localhost:3000](http://localhost:3000)** and click **`Create a Drop`**.
+2. On your mobile phone, open the Camera and **scan the QR code** on the computer screen.
+3. Tap the link to open DROP in your mobile browser. Once paired, you can stream photos or files directly to your computer!
+
+---
+
 ## 📁 Project Structure
 
 ```text
 DROP/
 ├── app/
-│   ├── globals.css         # Custom theme tokens & glassmorphism utilities
-│   ├── layout.tsx          # Root layout with fonts & background grid
+│   ├── globals.css         # Theme tokens, typography, and hairline utilities
+│   ├── layout.tsx          # Root layout with Newsreader, Inter & Mono fonts
 │   └── page.tsx            # Main application coordinator
 ├── components/
 │   ├── CreateDropView.tsx  # Room code & QR code display
 │   ├── DemoStateSwitcher.tsx # Interactive UI state preview toolbar
-│   ├── DropZone.tsx        # Drag-and-drop file target
+│   ├── DropZone.tsx        # Drag-and-drop file target & browse CTA
 │   ├── JoinDropView.tsx    # 5-box code entry & join triggers
 │   ├── Navbar.tsx          # Device badges & connection status
 │   ├── QRCodeCard.tsx      # SVG QR code rendering & link copy
 │   ├── QRScannerModal.tsx  # Camera QR code scanner
-│   ├── TransferProgress.tsx # File queue & progress metrics
+│   ├── TransferProgress.tsx # File queue & live metrics
 │   └── TransferView.tsx    # Connected & completed screens
 ├── hooks/
 │   └── useRoom.ts          # State management hook for WebRTC & signaling
@@ -119,6 +135,7 @@ DROP/
 │   └── server.ts           # Standalone WebSocket signaling server
 ├── types/
 │   └── index.ts            # TypeScript interfaces & types
+├── DESIGN (2).md           # 14islands style reference & tokens
 └── DROP.md                 # Product specifications & roadmap
 ```
 
