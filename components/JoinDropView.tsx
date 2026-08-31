@@ -2,8 +2,8 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, ArrowRight, QrCode, AlertCircle } from "lucide-react";
 import { QRScannerModal } from "./QRScannerModal";
+import { ArrowRight, QrCode, Info } from "lucide-react";
 import { sounds } from "@/lib/audio";
 
 interface JoinDropViewProps {
@@ -27,7 +27,6 @@ export const JoinDropView: React.FC<JoinDropViewProps> = ({
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
-    // Focus first empty input on mount
     const firstEmpty = digits.findIndex((d) => !d);
     const indexToFocus = firstEmpty === -1 ? 4 : firstEmpty;
     inputRefs.current[indexToFocus]?.focus();
@@ -41,7 +40,6 @@ export const JoinDropView: React.FC<JoinDropViewProps> = ({
 
     sounds.click();
 
-    // Auto-advance to next input
     if (upper && index < 4) {
       inputRefs.current[index + 1]?.focus();
     }
@@ -89,38 +87,54 @@ export const JoinDropView: React.FC<JoinDropViewProps> = ({
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.96 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.96 }}
-      transition={{ duration: 0.3 }}
-      className="w-full max-w-md mx-auto py-8 px-4 sm:px-6"
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 15 }}
+      transition={{ duration: 0.35 }}
+      className="w-full max-w-[600px] mx-auto px-6 py-10 sm:py-16 space-y-6"
     >
-      <div className="glass-panel p-6 sm:p-8 rounded-3xl relative overflow-hidden shadow-2xl space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
+      {/* What to do UX notice */}
+      <div className="bg-paper p-5 rounded-[4px] border-hairline flex items-start gap-3">
+        <Info className="w-4 h-4 text-ink flex-shrink-0 mt-0.5" />
+        <div className="space-y-1 text-caption text-graphite font-sans">
+          <p className="text-ink font-medium">How to join a drop:</p>
+          <p>
+            Look at the screen of the device that created the Drop. Enter the 5-letter code shown there or use your camera to scan their QR code.
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-fog p-8 sm:p-14 rounded-[4px] border-hairline space-y-8">
+        {/* Header Navigation */}
+        <div className="flex items-center justify-between border-b border-hairline pb-4">
           <button
             onClick={() => {
               sounds.click();
               onBack();
             }}
-            className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white font-mono transition-colors"
+            className="text-caption uppercase text-ink hover:text-stone tracking-widest transition-colors font-sans"
           >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Back</span>
+            ← Return to Home
           </button>
+
+          <span className="eyebrow-tag">DIRECT CONNECT</span>
         </div>
 
-        <div className="text-center space-y-1">
-          <h2 className="text-xl font-bold tracking-tight text-white font-mono">
+        {/* Title */}
+        <div className="text-center space-y-2">
+          <h2 className="font-editorial text-4xl sm:text-5xl text-ink font-normal">
             Join a Drop
           </h2>
-          <p className="text-xs text-zinc-400 font-mono">
-            Enter the 5-character code from the sending device
+          <p className="text-caption text-graphite font-sans">
+            Enter the 5-letter session code below
           </p>
         </div>
 
-        {/* 5-Box Room Code Input */}
-        <div className="flex items-center justify-center gap-2 sm:gap-3 py-2" onPaste={handlePaste}>
+        {/* 5-Box Inputs */}
+        <div
+          className="flex items-center justify-center gap-2 sm:gap-3 py-2"
+          onPaste={handlePaste}
+        >
           {digits.map((digit, index) => (
             <input
               key={index}
@@ -132,27 +146,27 @@ export const JoinDropView: React.FC<JoinDropViewProps> = ({
               value={digit}
               onChange={(e) => handleInputChange(index, e.target.value)}
               onKeyDown={(e) => handleKeyDown(index, e)}
-              className="w-12 h-14 sm:w-14 sm:h-16 text-center font-mono text-2xl sm:text-3xl font-extrabold uppercase rounded-2xl bg-zinc-950/80 border border-white/10 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 text-cyan-300 outline-none transition-all shadow-inner"
+              className="w-12 h-16 sm:w-16 sm:h-20 text-center font-mono text-3xl sm:text-4xl uppercase rounded-[4px] bg-paper border-hairline focus:border-ink text-ink outline-none transition-colors shadow-sm"
             />
           ))}
         </div>
 
+        {/* Error Notification */}
         {errorMessage && (
-          <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/50 flex items-center gap-2 text-xs text-rose-300 font-mono">
-            <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-            <span>{errorMessage}</span>
+          <div className="p-4 rounded-[4px] bg-paper border-hairline text-center">
+            <p className="text-caption text-ink font-sans font-medium">{errorMessage}</p>
           </div>
         )}
 
-        {/* Action Buttons */}
+        {/* Action Buttons with distinct backgrounds */}
         <div className="space-y-3 pt-2">
           <button
             onClick={submitCode}
             disabled={digits.join("").length !== 5}
-            className="w-full flex items-center justify-center py-3.5 rounded-xl font-mono text-sm font-medium text-zinc-950 bg-gradient-to-r from-cyan-400 to-brand-400 hover:from-cyan-300 hover:to-brand-300 disabled:opacity-40 disabled:cursor-not-allowed shadow-glow transition-all active:scale-[0.98]"
+            className="w-full py-4 bg-ink text-paper text-caption font-sans uppercase tracking-widest rounded-[4px] hover:bg-stone hover:text-ink disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 cursor-pointer font-medium active:scale-[0.98]"
           >
             <span>Connect & Join Drop</span>
-            <ArrowRight className="w-4 h-4 ml-2" />
+            <ArrowRight className="w-3.5 h-3.5" />
           </button>
 
           <button
@@ -160,9 +174,9 @@ export const JoinDropView: React.FC<JoinDropViewProps> = ({
               sounds.click();
               setIsScannerOpen(true);
             }}
-            className="w-full flex items-center justify-center py-3 rounded-xl font-mono text-xs font-medium text-zinc-300 glass-panel-interactive hover:text-white transition-all active:scale-[0.98]"
+            className="w-full py-3.5 bg-paper text-ink border-hairline text-caption font-sans uppercase tracking-widest rounded-[4px] hover:bg-ink hover:text-paper transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
           >
-            <QrCode className="w-4 h-4 mr-2 text-cyan-400" />
+            <QrCode className="w-3.5 h-3.5" />
             <span>Scan QR Code with Camera</span>
           </button>
         </div>

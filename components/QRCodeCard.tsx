@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Check, Link2, Smartphone } from "lucide-react";
+import { Link2, Check } from "lucide-react";
 import { sounds } from "@/lib/audio";
 
 interface QRCodeCardProps {
@@ -29,47 +29,40 @@ export const QRCodeCard: React.FC<QRCodeCardProps> = ({ roomCode }) => {
 
   return (
     <div className="flex flex-col items-center space-y-4">
-      {/* QR Display Container */}
-      <div className="p-4 rounded-2xl bg-white/95 border border-white/20 shadow-2xl relative group">
+      {/* QR Container */}
+      <div className="p-4 bg-paper border-hairline rounded-[4px] shadow-sm">
         <QRCodeSVG
           value={joinUrl || `DROP:${roomCode}`}
           size={180}
           level="M"
           includeMargin={false}
           bgColor="#ffffff"
-          fgColor="#09090b"
+          fgColor="#070707"
         />
-        {/* Subtle center brand mark in QR */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="w-9 h-9 rounded-lg bg-zinc-950 border-2 border-white flex items-center justify-center shadow-md">
-            <span className="font-mono text-cyan-400 font-bold text-xs">DR</span>
-          </div>
-        </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-col items-center space-y-2">
         <button
           onClick={handleCopy}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900/90 border border-white/10 hover:border-white/20 text-xs font-mono text-zinc-300 hover:text-white transition-all active:scale-95"
+          className="px-5 py-2 bg-paper text-ink border-hairline text-caption uppercase font-sans tracking-widest rounded-[4px] hover:bg-ink hover:text-paper transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
         >
           {copied ? (
             <>
-              <Check className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-emerald-400">Link Copied!</span>
+              <Check className="w-3.5 h-3.5" />
+              <span>Link Copied!</span>
             </>
           ) : (
             <>
-              <Link2 className="w-3.5 h-3.5 text-zinc-400" />
+              <Link2 className="w-3.5 h-3.5" />
               <span>Copy Direct Link</span>
             </>
           )}
         </button>
-      </div>
 
-      <p className="text-[11px] text-zinc-400 font-mono flex items-center gap-1.5">
-        <Smartphone className="w-3 h-3 text-cyan-400" />
-        Scan with camera on phone or tablet
-      </p>
+        <p className="text-caption text-graphite font-sans">
+          Point phone camera at QR to join session automatically
+        </p>
+      </div>
     </div>
   );
 };

@@ -10,53 +10,39 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#09090b",
-        surface: {
-          50: "#18181b",
-          100: "#121215",
-          200: "#1c1c22",
-          300: "#272730",
-          400: "#3f3f4a",
-        },
-        brand: {
-          50: "#e0f8ff",
-          100: "#bbf0ff",
-          400: "#38bdf8",
-          500: "#00d2ff",
-          600: "#0284c7",
-          glow: "#00f0ff",
-        },
-        accent: {
-          emerald: "#10b981",
-          cyan: "#06b6d4",
-          violet: "#8b5cf6",
-          rose: "#f43f5e",
-        },
+        ink: "#070707",
+        paper: "#ffffff",
+        fog: "#f2f2f2",
+        stone: "#a2a2a9",
+        graphite: "#797979",
+        border: "rgba(7, 7, 7, 0.08)",
+        "border-stone": "#a2a2a9",
       },
       fontFamily: {
+        editorial: ["var(--font-editorial)", "Newsreader", "serif"],
         sans: ["var(--font-sans)", "Inter", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "JetBrains Mono", "monospace"],
       },
-      animation: {
-        "pulse-slow": "pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-        "sonar": "sonar 2.5s cubic-bezier(0, 0.2, 0.8, 1) infinite",
-        "sonar-delayed": "sonar 2.5s cubic-bezier(0, 0.2, 0.8, 1) 1.25s infinite",
-        "shimmer": "shimmer 2s linear infinite",
+      fontSize: {
+        caption: ["12px", { lineHeight: "1.2", letterSpacing: "0.02em" }],
+        body: ["16px", { lineHeight: "1.4" }],
+        subheading: ["27px", { lineHeight: "1.3", letterSpacing: "-0.04em" }],
+        heading: ["75px", { lineHeight: "1.0", letterSpacing: "-0.04em" }],
+        "heading-lg": ["100px", { lineHeight: "0.85", letterSpacing: "-0.045em" }],
+        display: ["180px", { lineHeight: "0.8", letterSpacing: "-0.05em" }],
       },
-      keyframes: {
-        sonar: {
-          "0%": { transform: "scale(0.8)", opacity: "0.9" },
-          "100%": { transform: "scale(2.4)", opacity: "0" },
-        },
-        shimmer: {
-          "0%": { backgroundPosition: "-200% 0" },
-          "100%": { backgroundPosition: "200% 0" },
-        },
+      borderRadius: {
+        DEFAULT: "4px",
+        sm: "4px",
+        md: "4px",
+        lg: "4px",
+        xl: "4px",
+        "2xl": "4px",
+        "3xl": "4px",
+        full: "4px", // Enforce 4px ceiling per 14islands guidelines
       },
       boxShadow: {
-        glow: "0 0 35px -5px rgba(0, 240, 255, 0.25)",
-        "glow-emerald": "0 0 35px -5px rgba(16, 185, 129, 0.25)",
-        glass: "0 8px 32px 0 rgba(0, 0, 0, 0.37)",
+        none: "none",
       },
     },
   },

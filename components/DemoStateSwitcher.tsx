@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { ConnectionState } from "@/types";
-import { Sparkles, ChevronUp, ChevronDown, Radio, Play } from "lucide-react";
 import { sounds } from "@/lib/audio";
 
 interface DemoStateSwitcherProps {
@@ -14,11 +13,26 @@ interface DemoStateSwitcherProps {
 
 export const DemoStateSwitcher: React.FC<DemoStateSwitcherProps> = ({
   currentState,
-  isMockMode,
   onSetState,
   onResetLive,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen]);
 
   const states: { label: string; state: ConnectionState }[] = [
     { label: "1. Landing", state: "idle" },
@@ -32,62 +46,62 @@ export const DemoStateSwitcher: React.FC<DemoStateSwitcherProps> = ({
   ];
 
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center">
+    <div ref={containerRef} className="fixed bottom-4 right-4 z-50 flex flex-col items-end">
       {/* Expanded States Menu */}
       {isOpen && (
-        <div className="mb-2 p-3 rounded-2xl glass-panel border border-cyan-500/30 bg-zinc-950/90 shadow-2xl backdrop-blur-xl flex flex-wrap items-center justify-center gap-1.5 max-w-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
-          <div className="w-full text-center pb-1.5 border-b border-white/5 flex items-center justify-between px-2">
-            <span className="text-[10px] uppercase font-mono tracking-widest text-cyan-400 font-semibold">
-              Milestone 1 UI State Previewer
+        <div className="mb-2 p-4 rounded-[4px] bg-paper border-hairline shadow-2xl flex flex-col gap-2 w-72 bg-white animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <div className="text-left pb-2 border-b border-hairline flex items-center justify-between">
+            <span className="eyebrow-tag text-[10px]">
+              UI PREVIEW STATES
             </span>
             <button
               onClick={() => {
                 sounds.click();
                 onResetLive();
+                setIsOpen(false);
               }}
-              className="text-[10px] font-mono text-emerald-400 hover:underline flex items-center gap-1"
+              className="text-[10px] font-sans text-ink uppercase tracking-wider hover:text-stone underline underline-offset-2"
             >
-              <Play className="w-2.5 h-2.5" />
-              Switch to Live WebRTC
+              Live WebRTC →
             </button>
           </div>
 
-          {states.map((item) => {
-            const isSelected = currentState === item.state;
-            return (
-              <button
-                key={item.state}
-                onClick={() => {
-                  sounds.click();
-                  onSetState(item.state);
-                }}
-                className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-all ${
-                  isSelected
-                    ? "bg-cyan-500 text-zinc-950 font-bold shadow-glow"
-                    : "bg-zinc-900/80 text-zinc-400 hover:text-white hover:bg-zinc-800"
-                }`}
-              >
-                {item.label}
-              </button>
-            );
-          })}
+          <div className="grid grid-cols-1 gap-1.5 max-h-60 overflow-y-auto py-1">
+            {states.map((item) => {
+              const isSelected = currentState === item.state;
+              return (
+                <button
+                  key={item.state}
+                  onClick={() => {
+                    sounds.click();
+                    onSetState(item.state);
+                    setIsOpen(false);
+                  }}
+                  className={`px-3 py-2 text-left rounded-[4px] text-[11px] font-sans uppercase tracking-wider transition-colors ${
+                    isSelected
+                      ? "bg-ink text-paper font-medium"
+                      : "bg-fog text-ink hover:bg-stone hover:text-paper"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {/* Trigger Pill */}
+      {/* Trigger Pill at Bottom-Right to Avoid Overlapping Content */}
       <button
         onClick={() => {
           sounds.click();
           setIsOpen(!isOpen);
         }}
-        className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full glass-panel border border-white/10 hover:border-cyan-400/40 text-xs font-mono text-zinc-300 hover:text-white shadow-lg transition-all active:scale-95 group"
+        className="px-3.5 py-2 rounded-[4px] bg-paper border-hairline hover:border-ink text-caption uppercase text-ink tracking-widest transition-all shadow-md bg-white flex items-center gap-2 cursor-pointer active:scale-95"
       >
-        <Sparkles className="w-3.5 h-3.5 text-cyan-400 group-hover:rotate-12 transition-transform" />
-        <span>UI Preview States</span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 uppercase">
-          {currentState}
-        </span>
-        {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+        <span className="w-1.5 h-1.5 rounded-full bg-ink" />
+        <span>Preview [{currentState.toUpperCase()}]</span>
+        <span className="text-stone text-[10px]">{isOpen ? "✕" : "▲"}</span>
       </button>
     </div>
   );

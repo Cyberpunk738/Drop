@@ -10,7 +10,6 @@ import { JoinDropView } from "@/components/JoinDropView";
 import { TransferView } from "@/components/TransferView";
 import { DemoStateSwitcher } from "@/components/DemoStateSwitcher";
 import { useRoom } from "@/hooks/useRoom";
-import { AlertCircle, RefreshCw } from "lucide-react";
 import { sounds } from "@/lib/audio";
 
 function DropMainApp() {
@@ -37,7 +36,6 @@ function DropMainApp() {
     setMockState,
   } = useRoom();
 
-  // If URL has ?code=XXXXX, navigate directly to join
   useEffect(() => {
     const urlCode = searchParams.get("code");
     if (urlCode && urlCode.length === 5 && connectionState === "idle") {
@@ -62,7 +60,7 @@ function DropMainApp() {
   const isFailedOrExpired = connectionState === "failed" || connectionState === "expired";
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen bg-paper text-ink">
       <Navbar
         connectionState={connectionState}
         localDevice={localDevice}
@@ -122,29 +120,28 @@ function DropMainApp() {
           {isFailedOrExpired && (
             <div
               key="error"
-              className="w-full max-w-md mx-auto py-12 px-4 text-center space-y-6"
+              className="w-full max-w-[600px] mx-auto py-16 px-6 text-center"
             >
-              <div className="glass-panel p-8 rounded-3xl space-y-5">
-                <div className="w-14 h-14 rounded-2xl bg-rose-950/60 border border-rose-800/60 flex items-center justify-center mx-auto text-rose-400">
-                  <AlertCircle className="w-7 h-7" />
-                </div>
-                <div className="space-y-1">
-                  <h3 className="text-lg font-mono font-bold text-white">
-                    {connectionState === "expired" ? "Drop Expired" : "Connection Error"}
-                  </h3>
-                  <p className="text-xs font-mono text-zinc-400">
-                    {errorMessage || "Unable to establish peer connection."}
-                  </p>
-                </div>
+              <div className="bg-fog p-10 sm:p-14 rounded-[4px] border-hairline space-y-6">
+                <p className="eyebrow-tag">
+                  {connectionState === "expired" ? "SESSION EXPIRED" : "CONNECTION ERROR"}
+                </p>
+                <h3 className="font-editorial text-3xl sm:text-4xl text-ink font-normal">
+                  {connectionState === "expired"
+                    ? "This Drop has expired"
+                    : "Could not connect to peer"}
+                </h3>
+                <p className="text-caption text-graphite font-sans max-w-sm mx-auto">
+                  {errorMessage || "Please create a new drop to initialize a fresh WebRTC data channel."}
+                </p>
                 <button
                   onClick={() => {
                     sounds.click();
                     handleResetToLive();
                   }}
-                  className="w-full py-3 rounded-xl bg-cyan-400 hover:bg-cyan-300 font-mono text-xs font-semibold text-zinc-950 shadow-glow transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                  className="px-8 py-4 bg-ink text-paper text-caption font-sans uppercase tracking-widest rounded-[4px] hover:bg-stone hover:text-ink transition-colors"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Start New Drop</span>
+                  Start New Drop
                 </button>
               </div>
             </div>
@@ -167,7 +164,7 @@ export default function Page() {
   return (
     <Suspense
       fallback={
-        <div className="flex items-center justify-center min-h-screen text-zinc-400 font-mono text-xs">
+        <div className="flex items-center justify-center min-h-screen text-graphite font-sans text-caption uppercase tracking-widest">
           Loading DROP...
         </div>
       }
