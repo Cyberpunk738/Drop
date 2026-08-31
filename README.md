@@ -2,7 +2,7 @@
 
 > **Send files. No account. No upload.**
 
-DROP is a fast, minimal, peer-to-peer file-sharing web application inspired by the **14islands Monochrome Editorial Gallery** aesthetic and modern developer tools. It enables instant file transfers directly between browsers using **WebRTC DataChannels** and a lightweight **WebSocket Signaling Server**, guaranteeing zero server-side file storage and complete privacy.
+DROP is a fast, minimal, peer-to-peer file-sharing web application inspired by the **14islands Monochrome Editorial Gallery** aesthetic and modern developer tools. It enables instant file transfers directly between browsers using **WebRTC DataChannels** and distributed cloud signaling, guaranteeing zero server-side file storage and complete privacy.
 
 ---
 
@@ -10,6 +10,7 @@ DROP is a fast, minimal, peer-to-peer file-sharing web application inspired by t
 
 - **Direct P2P Transfer**: File data travels directly between connected browsers via WebRTC DataChannels—bypassing intermediate servers entirely.
 - **Zero Server Storage**: No databases, no cloud buckets, and zero file caching.
+- **Vercel & Serverless Ready**: Works out of the box on Vercel, Netlify, and static hosts with zero backend configuration needed.
 - **Instant Rooms & QR Codes**: Generate temporary 5-character room codes or scan SVG QR codes with your device's camera.
 - **Chunked Streaming & Backpressure**: High-performance 64KB chunking with adaptive buffer thresholding (`bufferedAmount`) for transferring large files smoothly without browser memory leaks.
 - **14islands Editorial Gallery Aesthetic**: Clean white canvas, oversized `Newsreader` display typography, hairline borders, and strict 4px corner radii with zero chromatic color noise.
@@ -23,8 +24,7 @@ DROP is a fast, minimal, peer-to-peer file-sharing web application inspired by t
 
 - **Frontend**: Next.js 15 (App Router), React 19, TypeScript
 - **Styling & Motion**: Tailwind CSS, Framer Motion, Lucide Icons
-- **Signaling**: Node.js WebSocket Server (`ws`)
-- **P2P Engine**: WebRTC (`RTCPeerConnection`, `RTCDataChannel`)
+- **WebRTC & Signaling**: PeerJS, WebRTC (`RTCPeerConnection`, `RTCDataChannel`)
 - **Typography**: Newsreader (Editorial Serif), Inter (Grotesque UI), JetBrains Mono
 - **Utilities**: `qrcode.react`
 
@@ -33,18 +33,18 @@ DROP is a fast, minimal, peer-to-peer file-sharing web application inspired by t
 ## 📐 How It Works
 
 ```text
-1. Discovery & Signaling
-   Device A (Sender) ──[ WebSocket ]──> Signaling Server <──[ WebSocket ]── Device B (Receiver)
-                                   (Exchanges SDP & ICE)
+1. Discovery & Handshake
+   Device A (Sender) ──[ Distributed Signaling ]──> Peer Broker <──[ Distributed Signaling ]── Device B (Receiver)
+                                            (Exchanges SDP & ICE)
 
 2. Direct P2P Transfer (Zero Server Interaction)
    Device A ══════════════════ WebRTC DataChannel ══════════════════> Device B
    (64KB Chunks)                                                    (Reassemble Blob & Download)
 ```
 
-1. **Host** creates a drop room (`create-room`), receiving a 5-character code (e.g. `7XK9P`) and QR code.
-2. **Guest** enters the code or scans the QR code (`join-room`).
-3. The lightweight signaling server relays the SDP Offer, Answer, and ICE Candidates.
+1. **Host** creates a drop room, receiving a 5-character code (e.g. `7XK9P`) and QR code.
+2. **Guest** enters the code or scans the QR code.
+3. Distributed cloud signaling brokers the SDP Offer, Answer, and ICE Candidates across different networks.
 4. Once the `RTCDataChannel` opens, file chunks stream directly from peer to peer.
 5. The receiving browser reassembles the binary chunks into a `Blob` and triggers automatic download.
 
@@ -70,19 +70,7 @@ npm install
 
 ### Running Locally
 
-To run both the **Next.js Frontend** and the **Signaling Server** simultaneously:
-
 ```bash
-npm run dev:all
-```
-
-Or run each service individually in separate terminals:
-
-```bash
-# Terminal 1: Signaling Server (Port 3001)
-npm run signaling
-
-# Terminal 2: Next.js Frontend (Port 3000)
 npm run dev
 ```
 
@@ -98,7 +86,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 3. Click **`Join a Drop`** and enter the 5-letter code displayed in Window 1.
 4. Drag a file into Window 1 and click **`Send Files Now`** — Window 2 will receive and automatically download the file.
 
-### Option B: Between Phone & Computer (Same Wi-Fi)
+### Option B: Between Phone & Computer (Same Wi-Fi or Cellular)
 1. On your computer, open **[http://localhost:3000](http://localhost:3000)** and click **`Create a Drop`**.
 2. On your mobile phone, open the Camera and **scan the QR code** on the computer screen.
 3. Tap the link to open DROP in your mobile browser. Once paired, you can stream photos or files directly to your computer!
@@ -129,10 +117,9 @@ DROP/
 │   ├── audio.ts            # Web Audio API micro-sounds
 │   ├── device.ts           # Browser/OS detection & formatting utils
 │   ├── file-transfer.ts    # 64KB chunk streaming & reassembly engine
+│   ├── peer-manager.ts     # PeerJS WebRTC connection & signaling broker
 │   ├── signaling.ts        # WebSocket signaling client
 │   └── webrtc.ts           # RTCPeerConnection & DataChannel manager
-├── signaling-server/
-│   └── server.ts           # Standalone WebSocket signaling server
 ├── types/
 │   └── index.ts            # TypeScript interfaces & types
 ├── DESIGN (2).md           # 14islands style reference & tokens
@@ -144,8 +131,8 @@ DROP/
 ## 🔒 Security & Privacy
 
 - **End-to-End Encrypted Transport**: All WebRTC DataChannels are encrypted by default using DTLS/SCTP.
-- **Zero Server Knowledge**: The signaling server only handles temporary connection metadata and room coordination—it never receives file payloads.
-- **Ephemeral Rooms**: Room codes automatically expire after 15 minutes of inactivity.
+- **Zero Server Knowledge**: Signaling brokers only handle temporary connection handshakes—they never receive or store file payloads.
+- **Ephemeral Sessions**: Sessions are temporary and close immediately when tabs are closed.
 
 ---
 
