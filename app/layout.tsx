@@ -23,8 +23,17 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "DROP — Peer-to-Peer File Sharing",
-  description: "Direct device-to-device file transfer with WebRTC. No account. No upload. Zero storage.",
-  keywords: ["file sharing", "p2p", "webrtc", "airdrop", "direct transfer", "privacy", "editorial"],
+  description:
+    "Direct device-to-device file transfer with WebRTC. No account. No upload. Zero storage.",
+  keywords: [
+    "file sharing",
+    "p2p",
+    "webrtc",
+    "airdrop",
+    "direct transfer",
+    "privacy",
+    "editorial",
+  ],
   authors: [{ name: "DROP" }],
 };
 
@@ -32,7 +41,6 @@ export const viewport: Viewport = {
   themeColor: "#ffffff",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
 };
 
 export default function RootLayout({

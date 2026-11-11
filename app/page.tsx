@@ -8,16 +8,19 @@ import { LandingView } from "@/components/LandingView";
 import { CreateDropView } from "@/components/CreateDropView";
 import { JoinDropView } from "@/components/JoinDropView";
 import { TransferView } from "@/components/TransferView";
-import { DemoStateSwitcher } from "@/components/DemoStateSwitcher";
+
 import { useRoom } from "@/hooks/useRoom";
 import { sounds } from "@/lib/audio";
 
 function DropMainApp() {
   const searchParams = useSearchParams();
-  const [viewOverride, setViewOverride] = useState<"landing" | "join" | null>(null);
+  const [viewOverride, setViewOverride] = useState<"landing" | "join" | null>(
+    null,
+  );
 
   const {
     connectionState,
+    removeFile,
     roomCode,
     role,
     localDevice,
@@ -25,15 +28,12 @@ function DropMainApp() {
     files,
     activeFileId,
     errorMessage,
-    isMockMode,
-    setIsMockMode,
     createRoom,
     joinRoom,
     addFiles,
     sendQueuedFiles,
     cancelTransfer,
     resetToLanding,
-    setMockState,
   } = useRoom();
 
   useEffect(() => {
@@ -44,20 +44,23 @@ function DropMainApp() {
   }, [searchParams, connectionState]);
 
   const handleResetToLive = () => {
-    setIsMockMode(false);
     resetToLanding();
     setViewOverride(null);
   };
 
   const isLanding = connectionState === "idle" && viewOverride !== "join";
-  const isJoining = (connectionState === "idle" && viewOverride === "join") || connectionState === "connecting";
-  const isCreating = connectionState === "creating" || connectionState === "waiting";
+  const isJoining =
+    (connectionState === "idle" && viewOverride === "join") ||
+    connectionState === "connecting";
+  const isCreating =
+    connectionState === "creating" || connectionState === "waiting";
   const isConnectedOrTransferring =
     connectionState === "connected" ||
     connectionState === "transferring" ||
     connectionState === "completed" ||
     connectionState === "disconnected";
-  const isFailedOrExpired = connectionState === "failed" || connectionState === "expired";
+  const isFailedOrExpired =
+    connectionState === "failed" || connectionState === "expired";
 
   return (
     <div className="flex flex-col min-h-screen bg-paper text-ink">
@@ -84,6 +87,7 @@ function DropMainApp() {
             <CreateDropView
               key="create"
               roomCode={roomCode}
+              isReady={connectionState === "waiting"}
               onCancel={handleResetToLive}
             />
           )}
@@ -93,6 +97,7 @@ function DropMainApp() {
             <JoinDropView
               key="join"
               initialCode={searchParams.get("code") || ""}
+              connecting={connectionState === "connecting"}
               onJoin={(code) => joinRoom(code)}
               onBack={handleResetToLive}
               errorMessage={errorMessage}
@@ -113,6 +118,7 @@ function DropMainApp() {
               onSendFiles={sendQueuedFiles}
               onCancelTransfer={cancelTransfer}
               onLeave={handleResetToLive}
+              onRemoveFile={removeFile}
             />
           )}
 
@@ -124,7 +130,9 @@ function DropMainApp() {
             >
               <div className="bg-fog p-10 sm:p-14 rounded-[4px] border-hairline space-y-6">
                 <p className="eyebrow-tag">
-                  {connectionState === "expired" ? "SESSION EXPIRED" : "CONNECTION ERROR"}
+                  {connectionState === "expired"
+                    ? "SESSION EXPIRED"
+                    : "CONNECTION ERROR"}
                 </p>
                 <h3 className="font-editorial text-3xl sm:text-4xl text-ink font-normal">
                   {connectionState === "expired"
@@ -132,7 +140,8 @@ function DropMainApp() {
                     : "Could not connect to peer"}
                 </h3>
                 <p className="text-caption text-graphite font-sans max-w-sm mx-auto">
-                  {errorMessage || "Please create a new drop to initialize a fresh WebRTC data channel."}
+                  {errorMessage ||
+                    "Create a new Drop and connect both devices again."}
                 </p>
                 <button
                   onClick={() => {
@@ -148,14 +157,6 @@ function DropMainApp() {
           )}
         </AnimatePresence>
       </main>
-
-      {/* State Switcher for rapid UI testing and verification */}
-      <DemoStateSwitcher
-        currentState={connectionState}
-        isMockMode={isMockMode}
-        onSetState={setMockState}
-        onResetLive={handleResetToLive}
-      />
     </div>
   );
 }

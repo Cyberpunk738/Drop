@@ -13,8 +13,8 @@ const config: Config = {
         ink: "#070707",
         paper: "#ffffff",
         fog: "#f2f2f2",
-        stone: "#a2a2a9",
-        graphite: "#797979",
+        stone: "#72766a",
+        graphite: "#62665a",
         border: "rgba(7, 7, 7, 0.08)",
         "border-stone": "#a2a2a9",
       },
@@ -28,18 +28,11 @@ const config: Config = {
         body: ["16px", { lineHeight: "1.4" }],
         subheading: ["27px", { lineHeight: "1.3", letterSpacing: "-0.04em" }],
         heading: ["75px", { lineHeight: "1.0", letterSpacing: "-0.04em" }],
-        "heading-lg": ["100px", { lineHeight: "0.85", letterSpacing: "-0.045em" }],
+        "heading-lg": [
+          "100px",
+          { lineHeight: "0.85", letterSpacing: "-0.045em" },
+        ],
         display: ["180px", { lineHeight: "0.8", letterSpacing: "-0.05em" }],
-      },
-      borderRadius: {
-        DEFAULT: "4px",
-        sm: "4px",
-        md: "4px",
-        lg: "4px",
-        xl: "4px",
-        "2xl": "4px",
-        "3xl": "4px",
-        full: "4px", // Enforce 4px ceiling per 14islands guidelines
       },
       boxShadow: {
         none: "none",
