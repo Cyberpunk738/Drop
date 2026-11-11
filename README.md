@@ -1,141 +1,65 @@
-# DROP — Peer-to-Peer File Sharing
+# Drop
 
-> **Send files. No account. No upload.**
+Private browser-to-browser file sharing. Pair two devices with a five-character code or QR link, then send files in either direction without an account or server-side file storage.
 
-DROP is a fast, minimal, peer-to-peer file-sharing web application inspired by the **14islands Monochrome Editorial Gallery** aesthetic and modern developer tools. It enables instant file transfers directly between browsers using **WebRTC DataChannels** and distributed cloud signaling, guaranteeing zero server-side file storage and complete privacy.
+## Run locally
 
----
-
-## ✨ Features
-
-- **Direct P2P Transfer**: File data travels directly between connected browsers via WebRTC DataChannels—bypassing intermediate servers entirely.
-- **Zero Server Storage**: No databases, no cloud buckets, and zero file caching.
-- **Vercel & Serverless Ready**: Works out of the box on Vercel, Netlify, and static hosts with zero backend configuration needed.
-- **Instant Rooms & QR Codes**: Generate temporary 5-character room codes or scan SVG QR codes with your device's camera.
-- **Chunked Streaming & Backpressure**: High-performance 64KB chunking with adaptive buffer thresholding (`bufferedAmount`) for transferring large files smoothly without browser memory leaks.
-- **14islands Editorial Gallery Aesthetic**: Clean white canvas, oversized `Newsreader` display typography, hairline borders, and strict 4px corner radii with zero chromatic color noise.
-- **Live Transfer Metrics**: Real-time progress bars, byte counters, speed indicators (MB/s), and estimated time remaining (ETA).
-- **Tactile Audio Feedback**: Subtle Web Audio API synthesis for clicks, connection confirmation, and completion chimes.
-- **UI State Previewer**: Integrated dev toolbar to preview all connection and transfer states.
-
----
-
-## 🛠️ Tech Stack
-
-- **Frontend**: Next.js 15 (App Router), React 19, TypeScript
-- **Styling & Motion**: Tailwind CSS, Framer Motion, Lucide Icons
-- **WebRTC & Signaling**: PeerJS, WebRTC (`RTCPeerConnection`, `RTCDataChannel`)
-- **Typography**: Newsreader (Editorial Serif), Inter (Grotesque UI), JetBrains Mono
-- **Utilities**: `qrcode.react`
-
----
-
-## 📐 How It Works
-
-```text
-1. Discovery & Handshake
-   Device A (Sender) ──[ Distributed Signaling ]──> Peer Broker <──[ Distributed Signaling ]── Device B (Receiver)
-                                            (Exchanges SDP & ICE)
-
-2. Direct P2P Transfer (Zero Server Interaction)
-   Device A ══════════════════ WebRTC DataChannel ══════════════════> Device B
-   (64KB Chunks)                                                    (Reassemble Blob & Download)
-```
-
-1. **Host** creates a drop room, receiving a 5-character code (e.g. `7XK9P`) and QR code.
-2. **Guest** enters the code or scans the QR code.
-3. Distributed cloud signaling brokers the SDP Offer, Answer, and ICE Candidates across different networks.
-4. Once the `RTCDataChannel` opens, file chunks stream directly from peer to peer.
-5. The receiving browser reassembles the binary chunks into a `Blob` and triggers automatic download.
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) (v18.0.0 or later recommended)
-- `npm` or `yarn` / `pnpm`
-
-### Installation
+Use Node.js 22 or newer.
 
 ```bash
-# Clone the repository
-git clone https://github.com/Cyberpunk738/Drop.git
-cd Drop
-
-# Install dependencies
-npm install
-```
-
-### Running Locally
-
-```bash
+npm ci
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open http://localhost:3000 in two browser windows. On separate devices, use an HTTPS deployment reachable by both devices; a localhost QR URL is only reachable on the originating computer.
 
----
+## Transfer behavior
 
-## 🧪 Testing the Connection
+- PeerJS brokers WebRTC connections through its default public signaling service. The retired custom HTTP/WebSocket signaling paths have been removed.
+- The host accepts one peer connection at a time; extra connections cannot replace an existing transfer.
+- Files are sent sequentially in 64 KB chunks with a 1 MB outgoing-buffer threshold.
+- The portable receiver collects chunks in memory, so files are limited to **100 MB each**. SHA-256 verification also allocates an in-memory buffer. This is a conservative bound, not a guarantee for every low-memory browser. Streaming to disk is a future improvement.
+- The receiver validates metadata, exact byte and chunk counts, and SHA-256 before acknowledging delivery. Sender progress stays below 100% until that acknowledgement arrives.
+- Received files remain available as explicit download links for the session. Delivery confirmation means verified receipt in browser memory, not that the user has saved the file to disk.
+- Cancellation stops the queue after the active file; unsent files remain available for another attempt. Failed files can be retried, or removed. Transfers restart from the beginning; partial-file resume is not implemented.
+- Stalled buffers and missing acknowledgements time out after 30 seconds. Connection setup also times out after 30 seconds. A lost data connection requires a new session on both devices; signaling reconnection is automatic where the data channel remains intact.
+- Blob URLs are revoked when a session ends or the application unmounts.
 
-### Option A: Two Browser Windows (Same Computer)
-1. Open **[http://localhost:3000](http://localhost:3000)** in Window 1 and click **`Create a Drop`**.
-2. Open an **Incognito / Private Window** in Window 2 and go to **[http://localhost:3000](http://localhost:3000)**.
-3. Click **`Join a Drop`** and enter the 5-letter code displayed in Window 1.
-4. Drag a file into Window 1 and click **`Send Files Now`** — Window 2 will receive and automatically download the file.
+## Network configuration
 
-### Option B: Between Phone & Computer (Same Wi-Fi or Cellular)
-1. On your computer, open **[http://localhost:3000](http://localhost:3000)** and click **`Create a Drop`**.
-2. On your mobile phone, open the Camera and **scan the QR code** on the computer screen.
-3. Tap the link to open DROP in your mobile browser. Once paired, you can stream photos or files directly to your computer!
-
----
-
-## 📁 Project Structure
+Drop includes STUN by default. For restrictive networks, configure a TURN account in your deployment environment (see `.env.example`):
 
 ```text
-DROP/
-├── app/
-│   ├── globals.css         # Theme tokens, typography, and hairline utilities
-│   ├── layout.tsx          # Root layout with Newsreader, Inter & Mono fonts
-│   └── page.tsx            # Main application coordinator
-├── components/
-│   ├── CreateDropView.tsx  # Room code & QR code display
-│   ├── DemoStateSwitcher.tsx # Interactive UI state preview toolbar
-│   ├── DropZone.tsx        # Drag-and-drop file target & browse CTA
-│   ├── JoinDropView.tsx    # 5-box code entry & join triggers
-│   ├── Navbar.tsx          # Device badges & connection status
-│   ├── QRCodeCard.tsx      # SVG QR code rendering & link copy
-│   ├── QRScannerModal.tsx  # Camera QR code scanner
-│   ├── TransferProgress.tsx # File queue & live metrics
-│   └── TransferView.tsx    # Connected & completed screens
-├── hooks/
-│   └── useRoom.ts          # State management hook for WebRTC & signaling
-├── lib/
-│   ├── audio.ts            # Web Audio API micro-sounds
-│   ├── device.ts           # Browser/OS detection & formatting utils
-│   ├── file-transfer.ts    # 64KB chunk streaming & reassembly engine
-│   ├── peer-manager.ts     # PeerJS WebRTC connection & signaling broker
-│   ├── signaling.ts        # WebSocket signaling client
-│   └── webrtc.ts           # RTCPeerConnection & DataChannel manager
-├── types/
-│   └── index.ts            # TypeScript interfaces & types
-├── DESIGN (2).md           # 14islands style reference & tokens
-└── DROP.md                 # Product specifications & roadmap
+TURN_URLS=turn:your-relay.example:3478,turns:your-relay.example:5349
+TURN_USERNAME=your-restricted-turn-user
+TURN_CREDENTIAL=your-turn-credential
 ```
 
----
+`/api/ice` supplies the settings to participating browsers without caching. TURN credentials must be available to WebRTC clients; use restricted credentials and quotas, or replace this endpoint with your provider's short-lived credential issuance. No TURN service or account is provisioned by this repository.
 
-## 🔒 Security & Privacy
+TURN can relay encrypted file traffic when a direct route is unavailable. Drop does not store the file payload on its application server. The signaling provider and relay may still see connection metadata; this is not an anonymity service. Session codes are bearer access: share only with your intended device and end a session when finished. There is no separate device identity verification or approval prompt.
 
-- **End-to-End Encrypted Transport**: All WebRTC DataChannels are encrypted by default using DTLS/SCTP.
-- **Zero Server Knowledge**: Signaling brokers only handle temporary connection handshakes—they never receive or store file payloads.
-- **Ephemeral Sessions**: Sessions are temporary and close immediately when tabs are closed.
+## Design
 
----
+The interface uses soft silver surfaces, rounded cards, dark pill buttons and warm red accents across the landing, pairing, and transfer views. Its original device illustration is built with CSS and icons; no third-party reference image or watermark is shipped. Demo state controls are absent from the production app. Reduced motion, keyboard focus and browser zoom are supported.
 
-## 📄 License
+## Verification
 
-MIT License. Feel free to use and adapt this project.
+```bash
+npm test
+npm run build
+npm run typecheck
+```
+
+The automated protocol tests connect two transfer engines through an ordered in-memory transport. They verify exact bytes, empty files, repeated and reverse transfers, corruption, truncation, missing acknowledgements, stalled buffers, cancellation/retry, channel failures, file size bounds, and cleanup. These tests do not prove live WebRTC connectivity across browsers or networks.
+
+Manual browser checks before release:
+
+1. Pair two windows, send several files and compare the downloaded contents.
+2. Send back from the receiving window, then use **Send another file**.
+3. Cancel during a transfer and confirm the next queued file does not start.
+4. Close a peer mid-transfer and confirm no success message appears; create a fresh session on both devices.
+5. Check phone-sized layouts, code paste, QR pairing, keyboard navigation and downloads.
+6. Test separate Wi-Fi/mobile networks with a configured TURN relay, including a network that requires relaying.
+
+GitHub Actions runs tests, a production build and TypeScript checks on pull requests.

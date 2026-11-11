@@ -85,13 +85,15 @@ export const DropZone: React.FC<DropZoneProps> = ({
           </h3>
 
           <p className="text-caption text-graphite font-sans">
-            Transfer photos, videos, archives, or documents of any size
+            Transfer photos, videos, archives, or documents up to 100 MB per
+            file
           </p>
         </div>
 
         {/* Clear Browse Button CTA with Background */}
         <button
           type="button"
+          disabled={disabled}
           onClick={(e) => {
             e.stopPropagation();
             handleClick();

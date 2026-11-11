@@ -1,66 +1,182 @@
 "use client";
-
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ConnectionState, DeviceInfo, FileItem } from "@/types";
 import { getDeviceInfo } from "@/lib/device";
 import { PeerManager } from "@/lib/peer-manager";
-import { FileTransferEngine, TransferProgressPayload } from "@/lib/file-transfer";
-import { sounds } from "@/lib/audio";
+import {
+  FileTransferEngine,
+  MAX_FILE_SIZE,
+  TransferProgressPayload,
+} from "@/lib/file-transfer";
 
-// Generate clean 5-character code (alphanumeric excluding ambiguous 0/O, 1/I)
-function generateRoomCode(): string {
+function generateRoomCode() {
   const chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
-  let code = "";
-  for (let i = 0; i < 5; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
+  return Array.from(
+    crypto.getRandomValues(new Uint8Array(5)),
+    (n) => chars[n % chars.length],
+  ).join("");
 }
-
 export function useRoom() {
-  const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
-  const [roomCode, setRoomCode] = useState<string>("");
+  const [connectionState, setConnectionState] =
+    useState<ConnectionState>("idle");
+  const [roomCode, setRoomCode] = useState("");
   const [role, setRole] = useState<"sender" | "receiver" | null>(null);
   const [localDevice, setLocalDevice] = useState<DeviceInfo>({
     browser: "Browser",
     os: "Device",
     deviceType: "desktop",
-    deviceName: "Local Client",
+    deviceName: "This device",
   });
   const [remoteDevice, setRemoteDevice] = useState<DeviceInfo | null>(null);
   const [files, setFiles] = useState<FileItem[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isMockMode, setIsMockMode] = useState<boolean>(false);
-
-  // References to long-lived engine instances
-  const peerManagerRef = useRef<PeerManager | null>(null);
-  const transferEngineRef = useRef<FileTransferEngine | null>(null);
-
-  // Initialize device info on client mount
+  const peer = useRef<PeerManager | null>(null);
+  const engine = useRef<FileTransferEngine | null>(null);
+  const sending = useRef(false);
+  const cancelled = useRef(false);
+  const epoch = useRef(0);
+  if (!engine.current) engine.current = new FileTransferEngine();
   useEffect(() => {
     setLocalDevice(getDeviceInfo());
+    return () => {
+      epoch.current++;
+      peer.current?.destroy();
+      engine.current?.reset();
+    };
   }, []);
-
-  // Ensure transfer engine is instantiated
-  if (!transferEngineRef.current) {
-    transferEngineRef.current = new FileTransferEngine();
-  }
-
-  // Cleanup helper
-  const cleanupConnections = useCallback(() => {
-    if (peerManagerRef.current) {
-      peerManagerRef.current.destroy();
-      peerManagerRef.current = null;
-    }
-    if (transferEngineRef.current) {
-      transferEngineRef.current.reset();
+  const updateProgress = (p: TransferProgressPayload) =>
+    setFiles((prev) =>
+      prev.map((f) =>
+        f.id === p.fileId ? { ...f, ...p, status: "transferring" } : f,
+      ),
+    );
+  const connect = useCallback(async (code: string, host: boolean) => {
+    const session = ++epoch.current;
+    peer.current?.destroy();
+    engine.current?.reset();
+    sending.current = false;
+    cancelled.current = false;
+    setFiles([]);
+    setErrorMessage(null);
+    setRemoteDevice(null);
+    setActiveFileId(null);
+    setRoomCode(code);
+    setRole(host ? "sender" : "receiver");
+    setConnectionState(host ? "creating" : "connecting");
+    const current = () => epoch.current === session;
+    const manager = new PeerManager(getDeviceInfo(), {
+      onPeerOpen: () => {
+        if (current() && host) setConnectionState("waiting");
+      },
+      onConnectionEstablished: (info) => {
+        if (current()) {
+          setRemoteDevice(info || null);
+          setErrorMessage(null);
+          setConnectionState("connected");
+        }
+      },
+      onConnectionClosed: () => {
+        if (!current()) return;
+        cancelled.current = true;
+        engine.current?.cancelTransfer();
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.status === "transferring"
+              ? {
+                  ...f,
+                  status: "error",
+                  error: "Connection lost. Reconnect and retry.",
+                }
+              : f,
+          ),
+        );
+        setConnectionState("disconnected");
+      },
+      onError: (message) => {
+        if (current()) {
+          setErrorMessage(message);
+          setConnectionState("failed");
+        }
+      },
+      onDataReceived: (data) => {
+        if (!current()) return;
+        void engine.current?.handleIncomingData(
+          data as ArrayBuffer | string,
+          (item) => {
+            if (current()) {
+              setFiles((prev) => [
+                ...prev.filter((f) => f.id !== item.id),
+                item,
+              ]);
+              setActiveFileId(item.id);
+              setConnectionState("transferring");
+            }
+          },
+          (p) => {
+            if (current()) updateProgress(p);
+          },
+          (item) => {
+            if (current()) {
+              setFiles((prev) =>
+                prev.map((f) => (f.id === item.id ? item : f)),
+              );
+              setActiveFileId(null);
+              if (!sending.current) setConnectionState("connected");
+            }
+          },
+          (message) => {
+            if (current()) {
+              setErrorMessage(message);
+              setFiles((prev) =>
+                prev.map((f) =>
+                  !f.file && f.status === "transferring"
+                    ? { ...f, status: "error", error: message }
+                    : f,
+                ),
+              );
+              if (!sending.current) setConnectionState("connected");
+            }
+          },
+          (data) => manager.send(data),
+        );
+      },
+    });
+    peer.current = manager;
+    try {
+      if (host) await manager.createRoom(code);
+      else await manager.joinRoom(code);
+    } catch (e) {
+      if (current()) {
+        setErrorMessage(e instanceof Error ? e.message : "Could not connect.");
+        setConnectionState("failed");
+      }
     }
   }, []);
-
-  // Reset to landing
+  const createRoom = useCallback(
+    () => connect(generateRoomCode(), true),
+    [connect],
+  );
+  const joinRoom = useCallback(
+    (code: string) => {
+      code = code.trim().toUpperCase();
+      if (!/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{5}$/.test(code)) {
+        setErrorMessage(
+          "Enter the 5-character code shown on the other device.",
+        );
+        return;
+      }
+      return connect(code, false);
+    },
+    [connect],
+  );
   const resetToLanding = useCallback(() => {
-    cleanupConnections();
+    epoch.current++;
+    cancelled.current = true;
+    sending.current = false;
+    peer.current?.destroy();
+    peer.current = null;
+    engine.current?.reset();
     setConnectionState("idle");
     setRoomCode("");
     setRole(null);
@@ -68,304 +184,106 @@ export function useRoom() {
     setFiles([]);
     setActiveFileId(null);
     setErrorMessage(null);
-  }, [cleanupConnections]);
-
-  // Host: Create Drop
-  const createRoom = useCallback(async () => {
-    const code = generateRoomCode();
-    setRoomCode(code);
-    setRole("sender");
-    setErrorMessage(null);
-
-    if (isMockMode) {
-      setConnectionState("waiting");
-      return;
-    }
-
-    cleanupConnections();
-    setConnectionState("waiting");
-    sounds.click();
-
-    const devInfo = getDeviceInfo();
-
-    const manager = new PeerManager(devInfo, {
-      onPeerOpen: () => {
-        console.log("[useRoom] Room ready with code:", code);
-        setConnectionState("waiting");
-      },
-      onConnectionEstablished: (remoteInfo) => {
-        console.log("[useRoom] Peer connected:", remoteInfo);
-        if (remoteInfo) setRemoteDevice(remoteInfo);
-        setConnectionState("connected");
-        sounds.connected();
-      },
-      onConnectionClosed: () => {
-        console.log("[useRoom] Connection closed");
-        setConnectionState("disconnected");
-      },
-      onDataReceived: (data) => {
-        transferEngineRef.current?.handleIncomingData(
-          data,
-          (incomingItem) => {
-            setConnectionState("transferring");
-            setFiles((prev) => [...prev, incomingItem]);
-            setActiveFileId(incomingItem.id);
-          },
-          (progressPayload) => {
-            updateFileProgress(progressPayload);
-          },
-          (completedItem, blob, blobUrl) => {
-            setFiles((prev) =>
-              prev.map((f) => (f.id === completedItem.id ? { ...f, ...completedItem } : f))
-            );
-            setConnectionState("completed");
-          },
-          (error) => {
-            setErrorMessage(error);
-          }
-        );
-      },
-      onError: (err) => {
-        console.warn("[useRoom] Host error:", err);
-        setErrorMessage(err);
-      },
-    });
-
-    peerManagerRef.current = manager;
-    await manager.createRoom(code);
-  }, [cleanupConnections, isMockMode]);
-
-  // Guest: Join Drop
-  const joinRoom = useCallback(
-    async (code: string) => {
-      const formattedCode = code.toUpperCase().trim();
-      if (!formattedCode || formattedCode.length !== 5) {
-        setErrorMessage("Please enter a valid 5-character room code.");
-        return;
-      }
-
-      setRoomCode(formattedCode);
-      setRole("receiver");
-      setErrorMessage(null);
-
-      if (isMockMode) {
-        setConnectionState("connected");
-        setRemoteDevice({
-          browser: "Chrome",
-          os: "macOS",
-          deviceType: "desktop",
-          deviceName: "Chrome on macOS",
-        });
-        return;
-      }
-
-      cleanupConnections();
-      setConnectionState("connecting");
-      sounds.click();
-
-      const devInfo = getDeviceInfo();
-
-      const manager = new PeerManager(devInfo, {
-        onPeerOpen: () => {
-          console.log("[useRoom Guest] Connecting to code:", formattedCode);
-        },
-        onConnectionEstablished: (remoteInfo) => {
-          console.log("[useRoom Guest] Connected to host:", remoteInfo);
-          if (remoteInfo) setRemoteDevice(remoteInfo);
-          setConnectionState("connected");
-          sounds.connected();
-        },
-        onConnectionClosed: () => {
-          console.log("[useRoom Guest] Connection closed");
-          setConnectionState("disconnected");
-        },
-        onDataReceived: (data) => {
-          transferEngineRef.current?.handleIncomingData(
-            data,
-            (incomingItem) => {
-              setConnectionState("transferring");
-              setFiles((prev) => [...prev, incomingItem]);
-              setActiveFileId(incomingItem.id);
-            },
-            (progressPayload) => {
-              updateFileProgress(progressPayload);
-            },
-            (completedItem, blob, blobUrl) => {
-              setFiles((prev) =>
-                prev.map((f) => (f.id === completedItem.id ? { ...f, ...completedItem } : f))
-              );
-              setConnectionState("completed");
-            },
-            (error) => {
-              setErrorMessage(error);
-            }
-          );
-        },
-        onError: (err) => {
-          console.warn("[useRoom Guest] Error:", err);
-          setErrorMessage(err);
-          setConnectionState("failed");
-        },
-      });
-
-      peerManagerRef.current = manager;
-      await manager.joinRoom(formattedCode);
-    },
-    [cleanupConnections, isMockMode]
-  );
-
-  // Update progress helper
-  const updateFileProgress = (payload: TransferProgressPayload) => {
-    setFiles((prev) =>
-      prev.map((item) => {
-        if (item.id === payload.fileId) {
-          return {
-            ...item,
-            progress: payload.progress,
-            bytesTransferred: payload.bytesTransferred,
-            speed: payload.speed,
-            timeRemaining: payload.timeRemaining,
-            status: payload.progress >= 100 ? "completed" : "transferring",
-          };
-        }
-        return item;
-      })
-    );
-  };
-
-  // Add files to transfer queue
-  const addFiles = useCallback((incomingFiles: FileList | File[]) => {
-    const fileArray = Array.from(incomingFiles);
-    const newItems: FileItem[] = fileArray.map((file) => ({
-      id: Math.random().toString(36).substring(2, 9),
-      name: file.name,
-      size: file.size,
-      type: file.type || "application/octet-stream",
-      file,
-      progress: 0,
-      status: "pending",
-      bytesTransferred: 0,
-    }));
-
-    setFiles((prev) => [...prev, ...newItems]);
   }, []);
-
-  // Send queued files sequentially
+  const addFiles = useCallback((incoming: FileList | File[]) => {
+    const selected = Array.from(incoming);
+    if (selected.some((f) => f.size > MAX_FILE_SIZE))
+      setErrorMessage(
+        "Files must be 100 MB or smaller to keep browser memory use bounded.",
+      );
+    else setErrorMessage(null);
+    setFiles((prev) => [
+      ...prev,
+      ...selected
+        .filter((f) => f.size <= MAX_FILE_SIZE)
+        .map((file) => ({
+          id: crypto.randomUUID(),
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          file,
+          progress: 0,
+          status: "pending" as const,
+          bytesTransferred: 0,
+        })),
+    ]);
+  }, []);
   const sendQueuedFiles = useCallback(async () => {
-    const pending = files.filter((f) => f.status === "pending");
-    if (pending.length === 0) return;
-
-    if (isMockMode) {
-      setConnectionState("transferring");
-      for (const item of pending) {
-        setActiveFileId(item.id);
-        for (let p = 0; p <= 100; p += 10) {
-          await new Promise((r) => setTimeout(r, 120));
-          updateFileProgress({
-            fileId: item.id,
-            bytesTransferred: Math.round((item.size * p) / 100),
-            totalBytes: item.size,
-            progress: p,
-            speed: 12.4 * 1024 * 1024,
-            timeRemaining: ((100 - p) / 10) * 0.1,
-          });
-        }
-      }
-      sounds.complete();
-      setConnectionState("completed");
-      return;
-    }
-
-    if (!peerManagerRef.current || !peerManagerRef.current.isConnected()) {
-      setErrorMessage("Connection is not ready. Please wait for peer.");
-      return;
-    }
-
+    if (sending.current || !peer.current?.isConnected()) return;
+    const pending = files.filter(
+      (f) =>
+        f.file &&
+        (f.status === "pending" ||
+          f.status === "error" ||
+          f.status === "cancelled"),
+    );
+    if (!pending.length) return;
+    const session = epoch.current;
+    sending.current = true;
+    cancelled.current = false;
+    setErrorMessage(null);
     setConnectionState("transferring");
-
     for (const item of pending) {
+      if (cancelled.current || session !== epoch.current) break;
       setActiveFileId(item.id);
-      try {
-        await transferEngineRef.current?.sendFile(
-          item,
-          (data) => peerManagerRef.current?.send(data) || false,
-          () => peerManagerRef.current?.getBufferedAmount() || 0,
-          (progressPayload) => updateFileProgress(progressPayload),
-          (completedId) => {
+      const ok = await engine.current!.sendFile(
+        item,
+        (data) =>
+          session === epoch.current && (peer.current?.send(data) || false),
+        () => peer.current?.getBufferedAmount() || 0,
+        (p) => {
+          if (session === epoch.current) updateProgress(p);
+        },
+        (id) => {
+          if (session === epoch.current)
             setFiles((prev) =>
               prev.map((f) =>
-                f.id === completedId ? { ...f, status: "completed", progress: 100 } : f
-              )
+                f.id === id ? { ...f, progress: 100, status: "completed" } : f,
+              ),
             );
-          },
-          (failedId, err) => {
+        },
+        (id, message) => {
+          if (session === epoch.current) {
+            setErrorMessage(message);
             setFiles((prev) =>
-              prev.map((f) => (f.id === failedId ? { ...f, status: "error", error: err } : f))
+              prev.map((f) =>
+                f.id === id
+                  ? {
+                      ...f,
+                      status: cancelled.current ? "cancelled" : "error",
+                      error: message,
+                    }
+                  : f,
+              ),
             );
-            setErrorMessage(err);
           }
-        );
-      } catch (err) {
-        console.error("[useRoom] Error sending file:", err);
-      }
+        },
+      );
+      if (!ok) break;
     }
-
-    setConnectionState("completed");
-  }, [files, isMockMode]);
-
-  // Cancel active transfer
+    if (session !== epoch.current) return;
+    sending.current = false;
+    setActiveFileId(null);
+    if (peer.current?.isConnected()) setConnectionState("connected");
+  }, [files]);
   const cancelTransfer = useCallback(() => {
-    transferEngineRef.current?.cancelTransfer();
-    setConnectionState("connected");
-  }, []);
-
-  // Demo Mock State Switcher for UI review
-  const setMockState = useCallback((state: ConnectionState) => {
-    setIsMockMode(true);
-    setConnectionState(state);
-    if (state === "waiting") {
-      setRoomCode("7XK9P");
-      setRole("sender");
-    } else if (state === "connecting" || state === "connected" || state === "transferring" || state === "completed") {
-      setRoomCode("7XK9P");
-      setRemoteDevice({
-        browser: "Chrome",
-        os: "macOS",
-        deviceType: "desktop",
-        deviceName: "Chrome on macOS",
-      });
-      if (state === "transferring" || state === "completed") {
-        setFiles([
-          {
-            id: "mock-1",
-            name: "design_system_v2.fig",
-            size: 128 * 1024 * 1024,
-            type: "application/octet-stream",
-            progress: state === "completed" ? 100 : 67,
-            status: state === "completed" ? "completed" : "transferring",
-            speed: 18.5 * 1024 * 1024,
-            bytesTransferred: state === "completed" ? 128 * 1024 * 1024 : 85 * 1024 * 1024,
-            timeRemaining: 2.3,
-          },
-          {
-            id: "mock-2",
-            name: "photo_raw_4k.jpg",
-            size: 14.2 * 1024 * 1024,
-            type: "image/jpeg",
-            progress: state === "completed" ? 100 : 0,
-            status: state === "completed" ? "completed" : "pending",
-            bytesTransferred: state === "completed" ? 14.2 * 1024 * 1024 : 0,
-          },
-        ]);
-      }
-    } else if (state === "failed" || state === "expired") {
-      setErrorMessage(state === "expired" ? "This Drop has expired. Create a new one." : "Couldn't connect to device.");
+    cancelled.current = true;
+    engine.current?.cancelTransfer();
+    setFiles((prev) =>
+      prev.map((f) =>
+        !f.file && f.status === "transferring"
+          ? { ...f, status: "cancelled", error: "Transfer cancelled." }
+          : f,
+      ),
+    );
+    if (!sending.current) {
+      setActiveFileId(null);
+      setConnectionState("connected");
     }
   }, []);
 
   return {
     connectionState,
-    setConnectionState,
     roomCode,
     role,
     localDevice,
@@ -373,14 +291,15 @@ export function useRoom() {
     files,
     activeFileId,
     errorMessage,
-    isMockMode,
-    setIsMockMode,
     createRoom,
     joinRoom,
     addFiles,
     sendQueuedFiles,
     cancelTransfer,
     resetToLanding,
-    setMockState,
+    removeFile: (id: string) =>
+      setFiles((prev) =>
+        prev.filter((f) => f.id !== id || f.status === "transferring"),
+      ),
   };
 }

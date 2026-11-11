@@ -8,6 +8,7 @@ import { sounds } from "@/lib/audio";
 
 interface JoinDropViewProps {
   initialCode?: string;
+  connecting?: boolean;
   onJoin: (code: string) => void;
   onBack: () => void;
   errorMessage: string | null;
@@ -15,13 +16,20 @@ interface JoinDropViewProps {
 
 export const JoinDropView: React.FC<JoinDropViewProps> = ({
   initialCode = "",
+  connecting = false,
   onJoin,
   onBack,
   errorMessage,
 }) => {
   const [digits, setDigits] = useState<string[]>(() => {
     const padded = (initialCode || "").padEnd(5, "").slice(0, 5).split("");
-    return [padded[0] || "", padded[1] || "", padded[2] || "", padded[3] || "", padded[4] || ""];
+    return [
+      padded[0] || "",
+      padded[1] || "",
+      padded[2] || "",
+      padded[3] || "",
+      padded[4] || "",
+    ];
   });
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -45,7 +53,10 @@ export const JoinDropView: React.FC<JoinDropViewProps> = ({
     }
   };
 
-  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (
+    index: number,
+    e: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
     if (e.key === "Backspace" && !digits[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
     } else if (e.key === "Enter") {
@@ -58,7 +69,7 @@ export const JoinDropView: React.FC<JoinDropViewProps> = ({
     const pasteData = e.clipboardData.getData("text").trim().toUpperCase();
 
     let extracted = pasteData;
-    if (pasteData.includes("code=")) {
+    if (pasteData.includes("CODE=")) {
       const match = pasteData.match(/code=([A-Za-z0-9]{5})/i);
       if (match) extracted = match[1];
     } else if (pasteData.startsWith("DROP:")) {
@@ -78,6 +89,7 @@ export const JoinDropView: React.FC<JoinDropViewProps> = ({
   };
 
   const submitCode = () => {
+    if (connecting) return;
     const fullCode = digits.join("");
     if (fullCode.length === 5) {
       sounds.click();
@@ -99,7 +111,9 @@ export const JoinDropView: React.FC<JoinDropViewProps> = ({
         <div className="space-y-1 text-caption text-graphite font-sans">
           <p className="text-ink font-medium">How to join a drop:</p>
           <p>
-            Look at the screen of the device that created the Drop. Enter the 5-letter code shown there or use your camera to scan their QR code.
+            Look at the screen of the device that created the Drop. Enter the
+            5-character code shown there or use your camera to scan their QR
+            code.
           </p>
         </div>
       </div>
@@ -126,7 +140,7 @@ export const JoinDropView: React.FC<JoinDropViewProps> = ({
             Join a Drop
           </h2>
           <p className="text-caption text-graphite font-sans">
-            Enter the 5-letter session code below
+            Enter the 5-character session code below
           </p>
         </div>
 
@@ -142,6 +156,10 @@ export const JoinDropView: React.FC<JoinDropViewProps> = ({
                 inputRefs.current[index] = el;
               }}
               type="text"
+              aria-label={`Code character ${index + 1}`}
+              autoCapitalize="characters"
+              autoComplete="off"
+              disabled={connecting}
               maxLength={1}
               value={digit}
               onChange={(e) => handleInputChange(index, e.target.value)}
@@ -154,7 +172,9 @@ export const JoinDropView: React.FC<JoinDropViewProps> = ({
         {/* Error Notification */}
         {errorMessage && (
           <div className="p-4 rounded-[4px] bg-paper border-hairline text-center">
-            <p className="text-caption text-ink font-sans font-medium">{errorMessage}</p>
+            <p className="text-caption text-ink font-sans font-medium">
+              {errorMessage}
+            </p>
           </div>
         )}
 
@@ -162,14 +182,17 @@ export const JoinDropView: React.FC<JoinDropViewProps> = ({
         <div className="space-y-3 pt-2">
           <button
             onClick={submitCode}
-            disabled={digits.join("").length !== 5}
+            disabled={connecting || digits.join("").length !== 5}
             className="w-full py-4 bg-ink text-paper text-caption font-sans uppercase tracking-widest rounded-[4px] hover:bg-stone hover:text-ink disabled:opacity-30 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 cursor-pointer font-medium active:scale-[0.98]"
           >
-            <span>Connect & Join Drop</span>
+            <span>
+              {connecting ? "Connecting devices…" : "Connect & Join Drop"}
+            </span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
 
           <button
+            disabled={connecting}
             onClick={() => {
               sounds.click();
               setIsScannerOpen(true);
