@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import type { Peer } from "peerjs";
 import { PeerManager } from "../lib/peer-manager";
+import { CHUNK_SIZE, FileTransferEngine } from "../lib/file-transfer";
+import type { FileItem } from "../types";
 
 const device = {
   browser: "Browser",
@@ -86,7 +88,7 @@ class TestPeer extends EventEmitter {
   }
 }
 
-function fixture() {
+function fixture(onData?: (data: string | ArrayBuffer) => void) {
   const peers: TestPeer[] = [];
   const events: string[] = [];
   const manager = new PeerManager(
@@ -97,7 +99,7 @@ function fixture() {
       onConnectionLost: () => events.push("lost"),
       onRemoteDevice: () => events.push("peer-info"),
       onSessionEnded: () => events.push("ended"),
-      onDataReceived: () => events.push("data"),
+      onDataReceived: onData ?? (() => events.push("data")),
       onError: (error) => events.push(error),
     },
     async (id) => () => {
@@ -234,4 +236,72 @@ test("leaving while signaling settings are loading cannot reopen a closed Drop",
   finishLoading(() => assert.fail("session already closed"));
   await opening;
   assert.equal(manager.isConnected(), false);
+});
+
+test("a multi-chunk file survives PeerJS binary views and verifies exact bytes", async (t) => {
+  const sender = new FileTransferEngine(100);
+  const receiver = new FileTransferEngine(100);
+  const noop = () => {};
+  const failures: string[] = [];
+  const downloads: Blob[] = [];
+  const { manager, peers } = fixture((data) => {
+    void receiver.handleIncomingData(
+      data,
+      noop,
+      noop,
+      (_, blob) => downloads.push(blob),
+      (error) => failures.push(error),
+      (reply) => {
+        void sender.handleIncomingData(reply, noop, noop, noop, noop);
+        return true;
+      },
+    );
+  });
+  t.after(() => {
+    sender.reset();
+    receiver.reset();
+    manager.destroy();
+  });
+  await manager.joinRoom("AB234");
+  peers[0].signalReady();
+  const [conn] = peers[0].dials;
+  conn.openChannel();
+
+  const bytes = Uint8Array.from({ length: 896_922 }, (_, i) => i % 251);
+  const file = new File([bytes], "phone-screenshot.jpg", { type: "image/jpeg" });
+  const item: FileItem = {
+    id: crypto.randomUUID(),
+    name: file.name,
+    size: file.size,
+    type: file.type,
+    file,
+    progress: 0,
+    status: "pending",
+  };
+
+  assert.equal(
+    await sender.sendFile(
+      item,
+      (data) => {
+        if (typeof data === "string" || data.byteLength < CHUNK_SIZE) {
+          conn.emit("data", data);
+        } else {
+          // PeerJS delivers reassembled messages as Uint8Array views.
+          const packet = new Uint8Array(data.byteLength + 8);
+          packet.set(new Uint8Array(data), 3);
+          conn.emit("data", packet.subarray(3, 3 + data.byteLength));
+        }
+        return true;
+      },
+      () => 0,
+      noop,
+      noop,
+      (_, error) => failures.push(error),
+    ),
+    true,
+    failures.join(", "),
+  );
+  assert.deepEqual(failures, []);
+  assert.equal(downloads.length, 1);
+  assert.deepEqual(new Uint8Array(await downloads[0].arrayBuffer()), bytes);
 });
