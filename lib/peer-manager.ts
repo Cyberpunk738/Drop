@@ -220,8 +220,13 @@ export class PeerManager {
           return;
         }
       }
-      if (typeof data === "string" || data instanceof ArrayBuffer)
+      if (typeof data === "string" || data instanceof ArrayBuffer) {
         this.callbacks.onDataReceived(data);
+      } else if (ArrayBuffer.isView(data)) {
+        // PeerJS can return a typed array after reassembling a split message.
+        const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+        this.callbacks.onDataReceived(bytes.slice().buffer);
+      }
     });
     conn.on("close", () => this.loseConnection(conn));
     conn.on("error", () => this.loseConnection(conn));
