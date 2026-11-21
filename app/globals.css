@@ -295,7 +295,11 @@ button:disabled {
   border: 1px solid #d6d7d3;
   box-shadow: 0 3px 0 #00000008;
 }
-.button-primary:hover,
+.button-primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.button-primary:not(:disabled):hover,
 .button-secondary:hover {
   transform: translateY(-2px);
 }

@@ -16,13 +16,13 @@ Open http://localhost:3000 in two browser windows. On separate devices, use an H
 ## Transfer behavior
 
 - PeerJS brokers WebRTC connections through its default public signaling service. The retired custom HTTP/WebSocket signaling paths have been removed.
-- The host accepts one peer connection at a time; extra connections cannot replace an existing transfer.
+- The host accepts one peer connection at a time. After pairing, only the same guest can rejoin that session.
 - Files are sent sequentially in 64 KB chunks with a 1 MB outgoing-buffer threshold.
 - The portable receiver collects chunks in memory, so files are limited to **100 MB each**. SHA-256 verification also allocates an in-memory buffer. This is a conservative bound, not a guarantee for every low-memory browser. Streaming to disk is a future improvement.
 - The receiver validates metadata, exact byte and chunk counts, and SHA-256 before acknowledging delivery. Sender progress stays below 100% until that acknowledgement arrives.
 - Received files remain available as explicit download links for the session. Delivery confirmation means verified receipt in browser memory, not that the user has saved the file to disk.
 - Cancellation stops the queue after the active file; unsent files remain available for another attempt. Failed files can be retried, or removed. Transfers restart from the beginning; partial-file resume is not implemented.
-- Stalled buffers and missing acknowledgements time out after 30 seconds. Connection setup also times out after 30 seconds. A lost data connection requires a new session on both devices; signaling reconnection is automatic where the data channel remains intact.
+- Stalled buffers and missing acknowledgements time out after 30 seconds. Connection setup also times out after 30 seconds. If the data connection drops, Drop attempts to rejoin the same session. The picker, queued files and completed downloads stay available while the pages remain open. An interrupted transfer can be retried from the beginning after reconnecting.
 - Blob URLs are revoked when a session ends or the application unmounts.
 
 ## Network configuration
@@ -58,8 +58,8 @@ Manual browser checks before release:
 1. Pair two windows, send several files and compare the downloaded contents.
 2. Send back from the receiving window, then use **Send another file**.
 3. Cancel during a transfer and confirm the next queued file does not start.
-4. Close a peer mid-transfer and confirm no success message appears; create a fresh session on both devices.
-5. Check phone-sized layouts, code paste, QR pairing, keyboard navigation and downloads.
+4. Interrupt the network mid-transfer and confirm no success message appears. Restore the connection, then retry the same file without selecting it again.
+5. On Android and iOS, open the native picker, background the browser briefly and return with a selected file. Verify that the same room reconnects, the file is queued, and its downloaded bytes match the original.
 6. Test separate Wi-Fi/mobile networks with a configured TURN relay, including a network that requires relaying.
 
 GitHub Actions runs tests, a production build and TypeScript checks on pull requests.

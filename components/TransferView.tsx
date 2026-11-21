@@ -8,11 +8,13 @@ interface Props {
   connectionState: ConnectionState;
   remoteDevice: DeviceInfo | null;
   files: FileItem[];
+  sendInProgress: boolean;
   activeFileId: string | null;
   role: "sender" | "receiver" | null;
   errorMessage: string | null;
   onFilesSelected: (files: FileList | File[]) => void;
   onSendFiles: () => void;
+  onReconnect: () => void;
   onCancelTransfer: () => void;
   onLeave: () => void;
   onRemoveFile: (id: string) => void;
@@ -21,24 +23,31 @@ export function TransferView(p: Props) {
   const picker = useRef<HTMLInputElement>(null);
   const busy = p.connectionState === "transferring";
   const disconnected = p.connectionState === "disconnected";
+  const reconnecting = p.connectionState === "reconnecting";
+  const canSend = p.connectionState === "connected" && !p.sendInProgress;
   const ready = p.files.filter(
     (f) => f.file && ["pending", "error", "cancelled"].includes(f.status),
   );
+  const retrying = ready.some((f) => f.status !== "pending");
   return (
     <section className="session-shell">
       <div className="session-heading">
         <span className="section-label">
-          {disconnected ? "Connection lost" : "Your private connection"}
+          {disconnected ? "Session ended" : "Your private connection"}
         </span>
         <h1>
           {disconnected
-            ? "Let’s reconnect."
-            : `Connected to ${p.remoteDevice?.deviceName || "your other device"}.`}
+            ? "The other device ended this Drop."
+            : reconnecting
+              ? "Reconnecting…"
+              : `Connected to ${p.remoteDevice?.deviceName || "your other device"}.`}
         </h1>
         <p>
           {disconnected
-            ? "Create a new Drop on one device, then join from the other to retry."
-            : "Send in either direction. Keep both tabs open until delivery is confirmed."}
+            ? "Start a new Drop to send more files."
+            : reconnecting
+              ? "Keep both devices on Drop. Your selected files will be ready when the connection returns."
+              : "Choose a file, then tap Send. Keep both devices on Drop until delivery is confirmed."}
         </p>
         <button className="text-action" onClick={p.onLeave}>
           {disconnected ? "Start a new Drop" : "End session"}{" "}
@@ -88,7 +97,9 @@ export function TransferView(p: Props) {
                     ? "Delivery verified"
                     : f.status === "transferring" && f.progress >= 99
                       ? "Verifying delivery…"
-                      : f.status}
+                      : f.status === "pending"
+                        ? "Ready to send"
+                        : f.status}
                 </span>
                 {f.status === "transferring" && (
                   <progress
@@ -140,9 +151,22 @@ export function TransferView(p: Props) {
         ) : (
           !disconnected && (
             <>
+              {reconnecting && p.role === "receiver" && (
+                <button className="button-secondary" onClick={p.onReconnect}>
+                  Retry connection
+                </button>
+              )}
               {ready.length > 0 && (
-                <button className="button-primary" onClick={p.onSendFiles}>
-                  Send {ready.length} {ready.length === 1 ? "file" : "files"}{" "}
+                <button
+                  className="button-primary"
+                  onClick={p.onSendFiles}
+                  disabled={!canSend}
+                >
+                  {reconnecting
+                    ? "Waiting to send"
+                    : p.sendInProgress
+                      ? "Finishing previous attempt…"
+                      : `${retrying ? "Retry" : "Send"} ${ready.length} ${ready.length === 1 ? "file" : "files"}`}{" "}
                   <ArrowUpRight size={17} />
                 </button>
               )}
@@ -151,7 +175,7 @@ export function TransferView(p: Props) {
                   className="button-secondary"
                   onClick={() => picker.current?.click()}
                 >
-                  Send another file
+                  Choose more files
                 </button>
               )}
             </>
