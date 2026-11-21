@@ -26,12 +26,14 @@ function DropMainApp() {
     localDevice,
     remoteDevice,
     files,
+    sendInProgress,
     activeFileId,
     errorMessage,
     createRoom,
     joinRoom,
     addFiles,
     sendQueuedFiles,
+    reconnectRoom,
     cancelTransfer,
     resetToLanding,
   } = useRoom();
@@ -58,7 +60,8 @@ function DropMainApp() {
     connectionState === "connected" ||
     connectionState === "transferring" ||
     connectionState === "completed" ||
-    connectionState === "disconnected";
+    connectionState === "disconnected" ||
+    connectionState === "reconnecting";
   const isFailedOrExpired =
     connectionState === "failed" || connectionState === "expired";
 
@@ -111,11 +114,13 @@ function DropMainApp() {
               connectionState={connectionState}
               remoteDevice={remoteDevice}
               files={files}
+              sendInProgress={sendInProgress}
               activeFileId={activeFileId}
               role={role}
               errorMessage={errorMessage}
               onFilesSelected={addFiles}
               onSendFiles={sendQueuedFiles}
+              onReconnect={reconnectRoom}
               onCancelTransfer={cancelTransfer}
               onLeave={handleResetToLive}
               onRemoveFile={removeFile}

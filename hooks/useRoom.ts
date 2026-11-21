@@ -9,6 +9,9 @@ import {
   TransferProgressPayload,
 } from "@/lib/file-transfer";
 
+const waitingToSend =
+  "Waiting for the other device. Your files are still queued.";
+
 function generateRoomCode() {
   const chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
   return Array.from(
@@ -29,17 +32,31 @@ export function useRoom() {
   });
   const [remoteDevice, setRemoteDevice] = useState<DeviceInfo | null>(null);
   const [files, setFiles] = useState<FileItem[]>([]);
+  const [sendInProgress, setSendInProgress] = useState(false);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const peer = useRef<PeerManager | null>(null);
   const engine = useRef<FileTransferEngine | null>(null);
   const sending = useRef(false);
+  const receiving = useRef(false);
+  const channelEpoch = useRef(0);
   const cancelled = useRef(false);
   const epoch = useRef(0);
   if (!engine.current) engine.current = new FileTransferEngine();
   useEffect(() => {
     setLocalDevice(getDeviceInfo());
+    const resume = () => {
+      if (!document.hidden) peer.current?.reconnect();
+    };
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("pageshow", resume);
+    window.addEventListener("focus", resume);
+    window.addEventListener("online", resume);
     return () => {
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("pageshow", resume);
+      window.removeEventListener("focus", resume);
+      window.removeEventListener("online", resume);
       epoch.current++;
       peer.current?.destroy();
       engine.current?.reset();
@@ -55,7 +72,10 @@ export function useRoom() {
     const session = ++epoch.current;
     peer.current?.destroy();
     engine.current?.reset();
+    engine.current = new FileTransferEngine();
     sending.current = false;
+    setSendInProgress(false);
+    receiving.current = false;
     cancelled.current = false;
     setFiles([]);
     setErrorMessage(null);
@@ -65,34 +85,46 @@ export function useRoom() {
     setRole(host ? "sender" : "receiver");
     setConnectionState(host ? "creating" : "connecting");
     const current = () => epoch.current === session;
+    const handleConnectionLoss = (ended: boolean) => {
+      if (!current()) return;
+      channelEpoch.current++;
+      cancelled.current = true;
+      receiving.current = false;
+      engine.current?.interruptTransfer();
+      setActiveFileId(null);
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.status === "transferring"
+            ? {
+                ...f,
+                status: "error",
+                error: ended
+                  ? "The other device ended the session."
+                  : "Connection lost. Retry after both devices reconnect.",
+              }
+            : f,
+        ),
+      );
+      setConnectionState(ended ? "disconnected" : "reconnecting");
+    };
     const manager = new PeerManager(getDeviceInfo(), {
       onPeerOpen: () => {
         if (current() && host) setConnectionState("waiting");
       },
       onConnectionEstablished: (info) => {
         if (current()) {
-          setRemoteDevice(info || null);
-          setErrorMessage(null);
+          if (info) setRemoteDevice(info);
+          setErrorMessage((message) =>
+            message === waitingToSend ? null : message,
+          );
           setConnectionState("connected");
         }
       },
-      onConnectionClosed: () => {
-        if (!current()) return;
-        cancelled.current = true;
-        engine.current?.cancelTransfer();
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.status === "transferring"
-              ? {
-                  ...f,
-                  status: "error",
-                  error: "Connection lost. Reconnect and retry.",
-                }
-              : f,
-          ),
-        );
-        setConnectionState("disconnected");
+      onRemoteDevice: (info) => {
+        if (current()) setRemoteDevice(info);
       },
+      onConnectionLost: () => handleConnectionLoss(false),
+      onSessionEnded: () => handleConnectionLoss(true),
       onError: (message) => {
         if (current()) {
           setErrorMessage(message);
@@ -102,13 +134,14 @@ export function useRoom() {
       onDataReceived: (data) => {
         if (!current()) return;
         void engine.current?.handleIncomingData(
-          data as ArrayBuffer | string,
+          data,
           (item) => {
             if (current()) {
               setFiles((prev) => [
                 ...prev.filter((f) => f.id !== item.id),
                 item,
               ]);
+              receiving.current = true;
               setActiveFileId(item.id);
               setConnectionState("transferring");
             }
@@ -121,12 +154,16 @@ export function useRoom() {
               setFiles((prev) =>
                 prev.map((f) => (f.id === item.id ? item : f)),
               );
+              receiving.current = false;
               setActiveFileId(null);
-              if (!sending.current) setConnectionState("connected");
+              if (!sending.current || cancelled.current)
+                setConnectionState("connected");
             }
           },
           (message) => {
             if (current()) {
+              receiving.current = false;
+              setActiveFileId(null);
               setErrorMessage(message);
               setFiles((prev) =>
                 prev.map((f) =>
@@ -135,7 +172,8 @@ export function useRoom() {
                     : f,
                 ),
               );
-              if (!sending.current) setConnectionState("connected");
+              if (!sending.current || cancelled.current)
+                setConnectionState("connected");
             }
           },
           (data) => manager.send(data),
@@ -174,7 +212,9 @@ export function useRoom() {
     epoch.current++;
     cancelled.current = true;
     sending.current = false;
-    peer.current?.destroy();
+    setSendInProgress(false);
+    receiving.current = false;
+    peer.current?.endSession();
     peer.current = null;
     engine.current?.reset();
     setConnectionState("idle");
@@ -208,8 +248,16 @@ export function useRoom() {
         })),
     ]);
   }, []);
+  const reconnectRoom = useCallback(() => peer.current?.reconnect(), []);
   const sendQueuedFiles = useCallback(async () => {
-    if (sending.current || !peer.current?.isConnected()) return;
+    const manager = peer.current;
+    if (!manager?.isConnected()) {
+      setErrorMessage(waitingToSend);
+      manager?.reconnect();
+      return;
+    }
+    if (sending.current) return;
+
     const pending = files.filter(
       (f) =>
         f.file &&
@@ -219,23 +267,34 @@ export function useRoom() {
     );
     if (!pending.length) return;
     const session = epoch.current;
+    const channel = channelEpoch.current;
+    const current = () =>
+      epoch.current === session && channelEpoch.current === channel;
+    const transferEngine = engine.current!;
     sending.current = true;
+    setSendInProgress(true);
     cancelled.current = false;
     setErrorMessage(null);
     setConnectionState("transferring");
     for (const item of pending) {
-      if (cancelled.current || session !== epoch.current) break;
+      if (cancelled.current || !current()) break;
       setActiveFileId(item.id);
-      const ok = await engine.current!.sendFile(
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.id === item.id
+            ? { ...f, progress: 0, status: "transferring", error: undefined }
+            : f,
+        ),
+      );
+      const ok = await transferEngine.sendFile(
         item,
-        (data) =>
-          session === epoch.current && (peer.current?.send(data) || false),
-        () => peer.current?.getBufferedAmount() || 0,
+        (data) => current() && manager.send(data),
+        () => manager.getBufferedAmount(),
         (p) => {
-          if (session === epoch.current) updateProgress(p);
+          if (current()) updateProgress(p);
         },
         (id) => {
-          if (session === epoch.current)
+          if (current())
             setFiles((prev) =>
               prev.map((f) =>
                 f.id === id ? { ...f, progress: 100, status: "completed" } : f,
@@ -243,7 +302,7 @@ export function useRoom() {
             );
         },
         (id, message) => {
-          if (session === epoch.current) {
+          if (current()) {
             setErrorMessage(message);
             setFiles((prev) =>
               prev.map((f) =>
@@ -263,12 +322,16 @@ export function useRoom() {
     }
     if (session !== epoch.current) return;
     sending.current = false;
-    setActiveFileId(null);
-    if (peer.current?.isConnected()) setConnectionState("connected");
+    setSendInProgress(false);
+    if (current() && !receiving.current) {
+      setActiveFileId(null);
+      if (manager.isConnected()) setConnectionState("connected");
+    }
   }, [files]);
   const cancelTransfer = useCallback(() => {
     cancelled.current = true;
     engine.current?.cancelTransfer();
+    receiving.current = false;
     setFiles((prev) =>
       prev.map((f) =>
         !f.file && f.status === "transferring"
@@ -278,7 +341,7 @@ export function useRoom() {
     );
     if (!sending.current) {
       setActiveFileId(null);
-      setConnectionState("connected");
+      if (peer.current?.isConnected()) setConnectionState("connected");
     }
   }, []);
 
@@ -289,12 +352,14 @@ export function useRoom() {
     localDevice,
     remoteDevice,
     files,
+    sendInProgress,
     activeFileId,
     errorMessage,
     createRoom,
     joinRoom,
     addFiles,
     sendQueuedFiles,
+    reconnectRoom,
     cancelTransfer,
     resetToLanding,
     removeFile: (id: string) =>

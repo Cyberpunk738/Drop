@@ -57,7 +57,9 @@ export const DropZone: React.FC<DropZoneProps> = ({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      onClick={handleClick}
+      onClick={(e) => {
+        if (e.target !== fileInputRef.current) handleClick();
+      }}
       className={`w-full rounded-[4px] border-hairline-dashed p-8 sm:p-14 transition-all cursor-pointer flex flex-col items-center justify-center text-center select-none ${
         isDragOver ? "bg-fog border-ink" : "bg-paper hover:bg-fog/50"
       } ${disabled ? "opacity-40 pointer-events-none" : ""}`}

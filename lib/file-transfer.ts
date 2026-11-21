@@ -45,8 +45,18 @@ export class FileTransferEngine {
   } | null = null;
 
   public cancelTransfer() {
+    this.stopTransfer("Transfer cancelled.", true);
+  }
+
+  public interruptTransfer() {
+    this.stopTransfer("Connection lost. Retry when both devices reconnect.", false);
+  }
+
+  private stopTransfer(message: string, notifyPeer: boolean) {
+    this.generation++;
+    this.receiveQueue = Promise.resolve();
     this.cancelled = true;
-    if (this.incoming) {
+    if (notifyPeer && this.incoming) {
       this.receivingReply?.(
         JSON.stringify({
           type: "file-reject",
@@ -54,14 +64,15 @@ export class FileTransferEngine {
           message: "Receiver cancelled the transfer.",
         }),
       );
-      this.incoming = null;
     }
-    if (this.activeSend)
+    this.incoming = null;
+    this.receivingReply = null;
+    if (notifyPeer && this.activeSend)
       this.activeSend.send(
         JSON.stringify({ type: "transfer-cancel", fileId: this.activeSend.id }),
       );
     for (const p of this.pending.values())
-      p.reject(new Error("Transfer cancelled."));
+      p.reject(new Error(message));
     this.pending.clear();
   }
   public async sendFile(
@@ -308,6 +319,7 @@ export class FileTransferEngine {
         }
       })
       .catch((e) => {
+        if (generation !== this.generation) return;
         if (this.incoming)
           reply(
             JSON.stringify({
@@ -322,9 +334,7 @@ export class FileTransferEngine {
     return this.receiveQueue;
   }
   public reset() {
-    this.generation++;
     this.cancelTransfer();
-    this.incoming = null;
     for (const url of this.urls.values()) URL.revokeObjectURL(url);
     this.urls.clear();
   }

@@ -361,3 +361,64 @@ test("receiver cancellation rejects sender completion", async () => {
   a.reset();
   b.reset();
 });
+
+test("disconnect clears partial transfer state and preserves verified downloads for retry", async () => {
+  const p = pair();
+  const send = (file: FileItem) =>
+    p.sender.sendFile(file, p.send, () => 0, noop, noop, (_, error) =>
+      assert.fail(error),
+    );
+  assert.equal(await send(item(new Uint8Array([1]))), true);
+  const firstDownload = p.received[0].item.blobUrl!;
+
+  const file = item(new Uint8Array(CHUNK_SIZE + 1).fill(7));
+  const interrupted = await p.sender.sendFile(
+    file,
+    p.send,
+    () => 0,
+    () => {
+      p.receiver.interruptTransfer();
+      p.sender.interruptTransfer();
+    },
+    () => assert.fail("interrupted file must not complete"),
+    noop,
+  );
+  assert.equal(interrupted, false);
+  assert.equal(p.received.length, 1);
+  assert.deepEqual(new Uint8Array(await (await fetch(firstDownload)).arrayBuffer()), new Uint8Array([1]));
+
+  assert.equal(await send(file), true);
+  assert.deepEqual(
+    new Uint8Array(await p.received[1].blob.arrayBuffer()),
+    new Uint8Array(CHUNK_SIZE + 1).fill(7),
+  );
+  p.reset();
+});
+
+test("a receiver interrupted during verification never publishes the old partial file", async () => {
+  const p = pair((data) => {
+    if (typeof data === "string" && JSON.parse(data).type === "file-complete") {
+      queueMicrotask(() => {
+        p.receiver.interruptTransfer();
+        p.sender.interruptTransfer();
+      });
+    }
+    return data;
+  });
+  assert.equal(
+    await p.sender.sendFile(
+      item(new Uint8Array([3, 5, 8])),
+      p.send,
+      () => 0,
+      noop,
+      () => assert.fail("interrupted file must not complete"),
+      (_, error) => assert.match(error, /Connection lost/),
+    ),
+    false,
+  );
+  // Let any old checksum task exit before checking for delivery.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(p.received.length, 0);
+  assert.deepEqual(p.errors, []);
+  p.reset();
+});
